@@ -1,0 +1,62 @@
+# Aurora Seed Interpreter Data Tables
+
+header keyword_index
+org 0x2F00
+label kw_table
+ref kw_header
+ref kw_org
+ref kw_u8
+ref kw_u16
+ref kw_u32
+ref kw_u64
+ref kw_bytes
+ref kw_label
+ref kw_ref
+ref kw_pad
+ref kw_ascii
+ref kw_end
+
+header keyword_table
+org 0x3000
+label kw_header
+ascii "header\0"
+label kw_org
+ascii "org\0"
+label kw_u8
+ascii "u8\0"
+label kw_u16
+ascii "u16\0"
+label kw_u32
+ascii "u32\0"
+label kw_u64
+ascii "u64\0"
+label kw_bytes
+ascii "bytes\0"
+label kw_label
+ascii "label\0"
+label kw_ref
+ascii "ref\0"
+label kw_pad
+ascii "pad\0"
+label kw_ascii
+ascii "ascii\0"
+label kw_end
+ascii "\0"
+
+header error_messages
+org 0x3200
+label msg_usage
+ascii "usage: aurseed [--trace] [--dry-run] input.aurs output.bin\n"
+label msg_syntax
+ascii "syntax error\n"
+label msg_semantic
+ascii "semantic error\n"
+label msg_overflow
+ascii "buffer overflow\n"
+
+header flag_strings
+org 0x3400
+label str_trace
+ascii "--trace\0"
+label str_dryrun
+ascii "--dry-run\0"

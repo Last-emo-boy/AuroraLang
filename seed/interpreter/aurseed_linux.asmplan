@@ -1,0 +1,813 @@
+# Aurora Seed Interpreter — Linux x86-64 Assembly Skeleton
+
+> Version 0.1 — outlines machine-code sequences to be hex-authored for the interpreter executable.
+
+## Segment Layout
+- Load address: `0x00400000`
+- Entry point: `entry_main` at file offset `0x00000080`
+- BSS/Arena: zero-initialized region appended after code (aligned to 4 KiB)
+
+## Register Conventions
+- `r12`: pointer to manifest buffer (arena base + 0x0000)
+- `r13`: pointer to token table
+- `r14`: pointer to directive table
+- `r15`: pointer to output buffer
+- `rbx`: current output cursor
+- `rbp`: stack frame base for routines
+
+## Code Skeleton
+
+### Entry / Argument Parsing
+```
+entry_main:
+    48 83 EC 20                ; sub rsp, 0x20 (shadow space)
+    48 89 E5                   ; mov rbp, rsp
+    B8 00 00 00 00             ; mov eax, 0          (placeholder: argc)
+    48 8B 7D 08                ; mov rdi, [rbp+0x8]  (argc pointer)
+    ...
+```
+- Parse `argv` manually; require exactly 3 arguments (`aurseed`, input, output) plus optional flags at start.
+- Flags recognized by comparing tokens to `--dry-run` and `--trace` (string compare routine).
+
+**Hex plan snippet**
+```
+; Prologue
+48 83 EC 28           sub rsp, 0x28
+48 89 E5              mov rbp, rsp
+48 89 5D F8           mov [rbp-0x8], rbx
+48 89 6D F0           mov [rbp-0x10], rbp
+```
+
+Argument load (using `rdi`/`rsi`):
+```
+48 8B 3F              mov rdi, [rdi]       ; argv pointer
+48 8B 77 08           mov rsi, [rdi+0x8]   ; argv[1]
+48 8B 7F 10           mov rdi, [rdi+0x10]  ; argv[2]
+```
+
+String compare routine skeleton:
+```
+cmp_loop:
+    0F B6 02          movzx eax, byte [rdx]
+    0F B6 0F          movzx ecx, byte [rdi]
+    29 C8             sub eax, ecx
+    75 06             jne cmp_done
+    48 FF C7          inc rdi
+    48 FF C2          inc rdx
+    84 C0             test al, al
+    75 F0             jne cmp_loop
+cmp_done:
+```
+
+### Syscall Stubs
+- `sys_open`: uses `mov rax, 2`, `syscall`.
+- `sys_read`: `mov rax, 0`, `syscall`.
+- `sys_write`: `mov rax, 1`, `syscall`.
+- `sys_close`: `mov rax, 3`, `syscall`.
+- `sys_exit`: `mov rax, 60`, `syscall`.
+
+Each stub encoded once and called via `call` instructions; stack aligned before call sequences.
+
+Example encoding:
+```
+sys_open:
+    48 89 F8          mov rax, rdi
+    B8 02 00 00 00    mov eax, 2
+    0F 05             syscall
+    C3                ret
+```
+
+### Memory Initialization
+```
+    ; Zero manifest/output buffers (64 KiB each)
+zero_loop:
+    C7 04 16 00 00 00 00       ; mov dword ptr [rsi+rdx], 0
+    ...                        ; (loop using `stosq` planned)
+```
+- Use `rep stosq` to fast-clear memory: `48 31 C0` (xor rax, rax), `48 BF <addr>` (rdi = base), `48 C7 C1 <count>` (rcx = qword count), `F3 48 AB` (rep stosq).
+
+Full sequence:
+```
+48 31 C0                xor rax, rax
+48 BF 00 60 40 00 00    mov rdi, 0x00406000 ; buffer start (placeholder)
+00 00 00
+48 C7 C1 00 08 00 00    mov rcx, 0x800      ; 0x800 qwords = 0x4000 bytes
+F3 48 AB                rep stosq
+```
+
+### Lexer Routine (`lexer_next_token`)
+- Input: `rsi` pointer to current manifest cursor.
+- Output: token type in `al`, pointer in `rdi`, length in `ecx`.
+- Uses state machine encoded with table of jump addresses; e.g., `cmp byte [rsi], 'h'`, branch accordingly.
+
+Sample snippet for skipping whitespace:
+```
+lexer_skip_ws:
+    0F B6 0E                   ; movzx ecx, byte [rsi]
+    80 F9 20                   ; cmp cl, ' '
+    74 05                      ; je +5
+    80 F9 09                   ; cmp cl, 0x09
+    74 F5                      ; je back to skip
+    ...
+```
+
+Token emit sequence for identifier:
+```
+emit_identifier:
+    41 B0 01              mov r8b, 0x1      ; type = identifier
+    66 41 89 00           mov [r8 + rax*1], ax ; store length (placeholder addressing)
+    44 88 10              mov [rax], r10b   ; save type byte
+```
+
+### Directive Dispatch Loop
+```
+parse_loop:
+    call lexer_next_token
+    cmp al, TOKEN_EOF
+    je emit_pass
+    cmp al, TOKEN_IDENTIFIER
+    jne syntax_error
+    ; Compare identifier string to known directives
+    call match_directive
+    ; Fill directive table entry at [r14 + directive_index * 16]
+```
+
+Hex sequence plan:
+```
+parse_loop:
+    E8 34 01 00 00        call lexer_next_token
+    3C 00                 cmp al, 0
+    0F 84 90 00 00 00     je emit_pass
+    3C 01                 cmp al, 1
+    0F 85 80 00 00 00     jne error_syntax
+    E8 80 01 00 00        call match_directive
+    48 8D 14 95 00 20 40 00  lea rdx, [r14 + rdx*4 + directive_base]
+    E8 C0 01 00 00        call directive_emit
+    E9 40 FF FF FF        jmp parse_loop
+```
+
+### Emission Routines
+- `emit_u8`: `mov [rbx], al`, `inc rbx`.
+- `emit_u16`: little-endian store using `mov word [rbx], ax`, `add rbx, 2`.
+- `emit_bytes`: loop copying sequential literal bytes from token buffer to output buffer.
+- `emit_pad`: compute difference between target offset and `rbx`; fill with zeros via `rep stosb`.
+
+Hex sequences:
+```
+emit_u8:
+    88 03          mov [rbx], al
+    48 FF C3       inc rbx
+    C3             ret
+
+emit_u16:
+    66 89 03       mov [rbx], ax
+    48 83 C3 02    add rbx, 0x2
+    C3
+
+emit_bytes:
+    48 85 D2       test rdx, rdx
+    74 0F          je emit_bytes_done
+emit_bytes_loop:
+    0F B6 01       movzx eax, byte [rcx]
+    88 03          mov [rbx], al
+    48 FF C3       inc rbx
+    48 FF C1       inc rcx
+    48 FF CA       dec rdx
+    75 EF          jne emit_bytes_loop
+emit_bytes_done:
+    C3
+
+emit_pad:
+    48 39 D9       cmp rcx, rbx
+    76 0E          jbe emit_pad_done
+    48 29 D9       sub rcx, rbx
+    48 89 D7       mov rdi, rbx
+    48 31 C0       xor rax, rax
+    48 89 CA       mov rdx, rcx
+    F3 AA          rep stosb
+    48 01 D9       add rcx, rbx
+emit_pad_done:
+    C3
+```
+
+### Relocation Application
+```
+reloc_apply:
+    ; iterate relocation table
+    mov rcx, [reloc_count]
+    mov rdx, reloc_array
+reloc_loop:
+    mov rax, [rdx]        ; label hash
+    call sym_resolve
+    mov r8, [rdx+8]       ; target offset within output buffer
+    mov [r15 + r8], rax   ; patch 64-bit reference
+    add rdx, 16
+    loop reloc_loop
+```
+
+Hex translation plan:
+```
+4C 8B 2D ?? ?? ?? ??      mov r13, [reloc_count]
+4D 85 ED                 test r13, r13
+74 1A                    je reloc_done
+4C 8B 25 ?? ?? ?? ??      mov r12, [reloc_array]
+reloc_iter:
+    49 8B 04 24          mov rax, [r12]
+    FF 15 ?? ?? ?? ??     call [rip+sym_resolve]
+    4D 8B 60 08          mov r12, [r12+0x8]
+    4C 89 04 28          mov [rax+r13], r8
+    49 83 C4 10          add r12, 0x10
+    49 FF CD             dec r13
+    75 E4                jne reloc_iter
+reloc_done:
+```
+
+### Error Handler
+```
+error_exit:
+    ; expects esi = message pointer, edx = length, edi = exit code
+    48 89 F2               ; mov rdx, rsi
+    BE 01 00 00 00         ; mov esi, 1 (stderr fd)
+    B8 01 00 00 00         ; mov eax, 1 (write)
+    0F 05                  ; syscall
+    89 F8                  ; mov eax, edi
+    0F 05                  ; exit syscall
+```
+
+## Data Tables
+- Directive keyword table stored as concatenated strings with offsets for binary search.
+- Error messages defined near end of file, referenced by pointer tables.
+
+## Next Actions
+- Flesh out exact hex encodings for each block.
+- Draft relocation table structures for label handling.
+- Author complementary Windows skeleton once Linux version validated.
+
+### Helper Routines (Iteration 11 Plan)
+
+> The following sketches replace the `xor eax, eax; ret` placeholders in `aurseed_linux.aurs`. Registers adhere to the conventions documented earlier in this file and in `specs/aurs_interpreter_helper_plan.md`.
+
+#### `match_directive`
+Inputs: `rsi` = pointer to active token record, `rdi` = keyword index table base (`kw_table`), `rcx` = keyword count (11).
+
+Pseudo-assembly:
+```
+match_directive:
+    push rbx                    ; preserve caller-saved scratch
+    xor eax, eax                ; opcode accumulator
+    mov rbx, [rsi+4]            ; token storage offset
+    mov r8w, [rsi+2]            ; token length
+    mov r9, kw_table            ; keyword pointer walker
+loop_keywords:
+    cmp rcx, 0
+    je no_match
+    mov r10, [rdi]              ; fetch keyword pointer
+    mov rdx, r10
+    mov r11, rbx
+    mov r12w, 0
+compare_loop:
+    mov al, [rdx]
+    mov bl, [r11]
+    cmp al, bl
+    jne advance_keyword
+    test al, al
+    je found_match
+    inc rdx
+    inc r11
+    inc r12w
+    cmp r12w, r8w
+    jne compare_loop
+    mov al, [rdx]
+    test al, al
+    jne advance_keyword         ; directive token longer than keyword
+found_match:
+    pop rbx
+    mov al, cl                  ; opcode = keyword index + 1
+    inc al
+    ret
+advance_keyword:
+    add rdi, 8                  ; next pointer in kw index table
+    dec rcx
+    jmp loop_keywords
+no_match:
+    pop rbx
+    stc                         ; signal failure via carry flag
+    xor eax, eax
+    ret
+```
+
+Hex notes:
+- Loop uses `cmp rcx, 0 / je` sentinel; ensure fall-through handles EOF keyword (empty string).
+- To keep encoding short, `rcx` doubles as countdown; initialize with keyword count before call.
+- Caller inspects CF to jump to `error_syntax`.
+
+#### `parser_expect_identifier`
+Inputs: `rbx` = token cursor index, `r13` = &token_records[0], `r12` = &token_storage[0].
+
+```
+parser_expect_identifier:
+    ; Inputs:
+    ;   rbx = token cursor index (0-based)
+    ;   r13 = &token_records[0]
+    ;   r12 = &token_storage[0]
+    ; Outputs:
+    ;   CF = 0 and rax = pointer to token record on success
+    ;   CF = 1 and rax = 0 on failure (cursor not advanced)
+    ; Success path increments rbx to consume the identifier token.
+
+    ; Step 1 — Compute record pointer
+    ;   lea rax, [r13 + rbx*8]
+    ;   Encoding emitted: 49 8D 44 DD 00  (REX.W|REX.B, scale=8, base=r13, index=rbx, disp32=0)
+
+    ; Step 2 — Load token type and validate
+    ;   movzx edx, byte [rax]    ; 0F B6 10
+    ;   cmp dl, 0x01             ; 80 FA 01
+    ;   jne syntax_fail          ; 75 05 (short hop over success epilogue)
+
+    ; Step 3 — Advance cursor and return pointer
+    ;   inc rbx                  ; 48 FF C3
+    ;   clc                      ; F8
+    ;   ret                      ; C3
+
+syntax_fail:
+    xor eax, eax                ; 31 C0
+    stc                         ; F9
+    ret                         ; C3
+```
+
+Encoding considerations:
+- Emitted helper length is 22 bytes, shifting subsequent helper offsets by +19 compared to the original stub.
+- Success path leaves `rax` pointing at the token record and advances `rbx`; failure preserves `rbx` and signals via CF.
+
+#### `parser_expect_numeric`
+Consumes a hex literal token and returns its 64-bit value while advancing the cursor. The implementation keeps everything inline (no helper calls) to minimise call/return overhead and to guarantee cursor state is only mutated after successful parsing.
+
+```
+parser_expect_numeric:
+    lea rax, [r13 + rbx*8]        ; locate token record
+    movzx edx, byte [rax]         ; require type = 0x02 (hex literal)
+    cmp dl, 0x02
+    jne fail
+    movzx ecx, word [rax+2]       ; length in bytes
+    test ecx, ecx
+    je fail
+    mov edx, dword [rax+4]
+    add rdx, r12                  ; convert storage offset → pointer
+    movzx r8d, byte [rax+1]       ; flags bit1 -> "0x" prefix
+    test r8b, 0x02
+    je no_prefix
+    cmp ecx, 2
+    jb fail                       ; prefix requires at least 2 bytes
+    add rdx, 2
+    sub ecx, 2
+no_prefix:
+    cmp ecx, 16                   ; clamp to 16 hex digits (64-bit)
+    ja fail
+    test ecx, ecx
+    je fail
+    xor r9d, r9d                  ; accumulator
+loop:
+    movzx eax, byte [rdx]
+    inc rdx
+    cmp al, '0'
+    jb fail
+    cmp al, '9'
+    jbe digit
+    cmp al, 'A'
+    jb lower_check
+    cmp al, 'F'
+    jbe upper
+lower_check:
+    cmp al, 'a'
+    jb fail
+    cmp al, 'f'
+    jbe lower
+    jmp fail
+digit:
+    sub al, '0'
+    jmp got_nibble
+upper:
+    sub al, 'A'
+    add al, 10
+    jmp got_nibble
+lower:
+    sub al, 'a'
+    add al, 10
+got_nibble:
+    shl r9, 4
+    movzx eax, al
+    or r9, rax
+    dec ecx
+    jne loop
+    inc rbx
+    mov rax, r9
+    clc
+    ret
+fail:
+    xor eax, eax
+    stc
+    ret
+```
+
+Final encoding (64 bytes):
+`49 8D 44 DD 00 0F B6 10 80 FA 02 75 77 0F B7 48 02 85 C9 74 6F 8B 50 04 4C 01 E2 44 0F B6 40 01 41 F6 C0 02 74 0C 83 F9 02 72 59 48 83 C2 02 83 E9 02 83 F9 10 77 4D 85 C9 74 49 45 31 C9 0F B6 02 48 FF C2 3C 30 72 3C 3C 39 76 12 3C 41 72 04 3C 46 76 0E 3C 61 72 2C 3C 66 76 0C EB 26 2C 30 EB 0C 2C 41 04 0A EB 06 2C 61 04 0A EB 00 49 C1 E1 04 0F B6 C0 49 09 C1 FF C9 75 C2 48 FF C3 4C 89 C8 F8 C3 31 C0 F9 C3`.
+
+#### `parser_emit_bytes`
+Inputs: `r15` = output buffer base, `rbx` = cursor offset, `rsi` = source pointer, `rcx` = length.
+
+```
+parser_emit_bytes:
+    lea rdx, [rbx + rcx]          ; compute new cursor position
+    cmp rdx, 0x10000              ; require ≤ output buffer capacity (64 KiB)
+    ja overflow
+    test rcx, rcx
+    je update_cursor
+    lea rdi, [r15 + rbx]          ; destination pointer in output buffer
+    cld
+    rep movsb                     ; copy `rcx` bytes from rsi → rdi
+update_cursor:
+    mov rbx, rdx
+    lea r8, [r15 - 0x6000]        ; cursor_block = output_buffer - 0x6000
+    mov [r8], rbx                 ; store current offset
+    cmp rbx, [r8+8]
+    jbe success
+    mov [r8+8], rbx               ; raise high-water mark
+success:
+    clc
+    ret
+overflow:
+    xor eax, eax
+    stc
+    ret
+```
+
+Padding and ASCII emit variants build on this routine by adjusting `rcx`/`rsi` source parameters before jumping into `parser_emit_bytes`.
+
+#### `parser_emit_pad`
+Consumes an absolute offset in `rcx` and zero-fills the gap from the current cursor (`rbx`) up to that target. Errors if the target precedes the cursor or exceeds the 64 KiB arena.
+
+```
+parser_emit_pad:
+    cmp rcx, rbx                 ; target must be ≥ current cursor
+    jb fail
+    mov r8, rcx                  ; preserve target for later
+    cmp rcx, 0x10000             ; clamp to arena size
+    ja overflow
+    mov rdx, rcx
+    sub rdx, rbx                 ; compute fill length
+    je update_cursor             ; nothing to write
+    lea rdi, [r15 + rbx]
+    xor eax, eax
+    mov rcx, rdx
+    cld
+    rep stosb                    ; zero-fill gap
+update_cursor:
+    mov rbx, r8
+    lea r9, [r15 - 0x6000]       ; cursor_block
+    mov [r9], rbx                ; update current offset
+    cmp rbx, [r9+8]
+    jbe success
+    mov [r9+8], rbx              ; bump high-water mark
+success:
+    clc
+    ret
+overflow:
+    xor eax, eax
+    stc
+    ret
+fail:
+    xor eax, eax
+    stc
+    ret
+```
+
+Final encoding (70 bytes):
+`48 39 D9 72 3D 49 89 C8 48 81 F9 00 00 01 00 77 2D 48 89 CA 48 29 DA 74 0C 49 8D 3C 1F 31 C0 48 89 D1 FC F3 AA 4C 89 C3 4D 8D 8F 00 A0 FF FF 49 89 19 49 3B 59 08 76 04 49 89 59 08 F8 C3 31 C0 F9 C3 31 C0 F9 C3`.
+
+#### `parser_apply_org`
+Validates `org` directives by ensuring forward-only motion and sharing cursor bookkeeping with the pad helper.
+
+```
+parser_apply_org:
+    lea r9, [r15 - 0x6000]       ; cursor_block base
+    mov rax, [r9]                ; current cursor
+    cmp rbx, rax                 ; org target must be ≥ current
+    jb fail
+    cmp rbx, 0x10000             ; guard overall arena size
+    ja overflow
+    mov [r9], rbx                ; update current cursor
+    cmp rbx, [r9+8]
+    jbe success
+    mov [r9+8], rbx              ; advance high-water mark
+success:
+    clc
+    ret
+overflow:
+    mov rbx, rax                 ; restore prior cursor
+    xor eax, eax
+    stc
+    ret
+fail:
+    mov rbx, rax                 ; restore prior cursor
+    xor eax, eax
+    stc
+    ret
+```
+
+Final encoding (53 bytes):
+`4D 8D 8F 00 A0 FF FF 49 8B 01 48 39 C3 72 1F 48 81 FB 00 00 01 00 77 0F 49 89 19 49 3B 59 08 76 04 49 89 59 08 F8 C3 48 89 C3 31 C0 F9 C3 48 89 C3 31 C0 F9 C3`.
+
+#### `parser_expect_bytes`
+Validates a hex literal for the `bytes` directive, handling optional `0x` prefix, enforcing even digit count, and returning both the pointer to the digits and the resulting byte length.
+
+```
+parser_expect_bytes:
+    lea rax, [r13 + rbx*8]
+    movzx edx, byte [rax]        ; require token type 0x02 (hex literal)
+    cmp dl, 0x02
+    jne fail
+    movzx ecx, word [rax+2]      ; raw character length
+    test ecx, ecx
+    je fail
+    mov edx, dword [rax+4]
+    add rdx, r12                 ; convert storage offset to pointer
+    movzx r8d, byte [rax+1]
+    test r8b, 0x02               ; strip optional 0x prefix
+    je no_prefix
+    cmp ecx, 2
+    jb fail
+    add rdx, 2
+    sub ecx, 2
+no_prefix:
+    test ecx, ecx                ; must have at least one digit remaining
+    je fail
+    test cl, 1                   ; enforce even digit count
+    jne fail
+    shr ecx, 1                   ; rcx becomes byte count
+    mov rax, rdx
+    inc rbx
+    clc
+    ret
+fail:
+    xor eax, eax
+    xor ecx, ecx
+    stc
+    ret
+```
+
+Final encoding (75 bytes):
+`49 8D 44 DD 00 0F B6 10 80 FA 02 75 38 0F B7 48 02 85 C9 74 30 8B 50 04 4C 01 E2 44 0F B6 40 01 41 F6 C0 02 74 0C 83 F9 02 72 1A 48 83 C2 02 83 E9 02 85 C9 74 0F F6 C1 01 75 0A D1 E9 48 89 D0 48 FF C3 F8 C3 31 C0 31 C9 F9 C3`.
+
+#### `parser_expect_string`
+Validates string literal tokens (type `0x03`) and returns the raw storage pointer alongside its byte length. The pointer is mirrored into `rsi` so downstream emitters can access the literal directly without additional moves.
+
+```
+parser_expect_string:
+    lea rdx, [r13 + rbx*8]    ; locate token record
+    movzx eax, byte [rdx]
+    cmp al, 0x03
+    jne fail
+    movzx ecx, word [rdx+2]
+    mov eax, dword [rdx+4]
+    add rax, r12              ; convert storage offset to pointer
+    mov rsi, rax              ; mirror pointer for caller convenience
+    inc rbx
+    clc
+    ret
+
+fail:
+    xor eax, eax              ; zero pointer/length on failure
+    xor ecx, ecx
+    xor esi, esi
+    stc
+    ret
+```
+
+Final encoding (38 bytes):
+`49 8D 54 DD 00 0F B6 02 3C 03 75 12 0F B7 4A 02 8B 42 04 4C 01 E0 48 89 C6 48 FF C3 F8 C3 31 C0 31 C9 31 F6 F9 C3`.
+
+#### `parser_emit_ascii`
+Decodes escape sequences inside string literals, writes the unescaped bytes into the output buffer, and reuses the cursor bookkeeping logic shared with the other emit helpers. Supported escapes include `\n`, `\t`, `\r`, `\0`, `\"`, and `\\`; malformed tails (e.g., dangling backslash or unknown escape) raise a syntax failure via CF.
+
+```
+parser_emit_ascii:
+    mov r8, rax                ; preserve original storage pointer
+    mov rsi, rax               ; read cursor over token storage
+    mov rdi, rax               ; decode in place
+    xor rdx, rdx               ; decoded length accumulator
+    test rcx, rcx
+    je emit_prep
+loop:
+    movzx eax, byte [rsi]
+    inc rsi
+    dec rcx
+    cmp al, '\\'
+    jne store_plain
+    test rcx, rcx              ; reject trailing backslash
+    je fail
+    movzx eax, byte [rsi]
+    inc rsi
+    dec rcx
+    cmp al, 'n'
+    je esc_n
+    cmp al, 't'
+    je esc_t
+    cmp al, 'r'
+    je esc_r
+    cmp al, '0'
+    je esc_zero
+    cmp al, '"'
+    je esc_quote
+    cmp al, '\\'
+    je esc_backslash
+    jmp fail                   ; unsupported escape
+esc_n:        mov al, 0x0A     ; newline
+              jmp store_plain
+esc_t:        mov al, 0x09     ; horizontal tab
+              jmp store_plain
+esc_r:        mov al, 0x0D     ; carriage return
+              jmp store_plain
+esc_zero:     xor eax, eax
+              jmp store_plain
+esc_quote:    mov al, 0x22
+              jmp store_plain
+esc_backslash:mov al, 0x5C
+              jmp store_plain
+store_plain:
+    mov [rdi], al
+    inc rdi
+    inc rdx
+    test rcx, rcx
+    jne loop
+emit_prep:
+    mov rcx, rdx               ; byte count
+    mov rsi, r8                ; reset source pointer
+    lea rdx, [rbx + rcx]
+    cmp rdx, 0x10000
+    ja overflow
+    test rcx, rcx
+    je update_cursor
+    lea rdi, [r15 + rbx]
+    cld
+    rep movsb
+update_cursor:
+    mov rbx, rdx
+    lea r9, [r15 - 0x6000]
+    mov [r9], rbx
+    cmp rbx, [r9+8]
+    jbe success
+    mov [r9+8], rbx
+success:
+    clc
+    ret
+overflow:
+    xor eax, eax
+    stc
+    ret
+fail:
+    xor eax, eax
+    xor ecx, ecx
+    xor esi, esi
+    stc
+    ret
+```
+
+Final encoding (116 bytes):
+`0F B7 51 02 85 D2 74 68 8B 71 04 4D 8D 04 34 48 B8 25 23 22 84 E4 9C F2 CB 49 BA B3 01 00 00 00 01 00 00 45 0F B6 08 44 30 C8 49 0F AF C2 49 FF C0 FF CA 75 EE 49 8D BF 00 60 FF FF B9 00 01 00 00 4C 8B 0F 4D 85 C9 74 08 48 83 C7 10 E2 F2 EB 1F 48 89 07 4D 8D 8F 00 A0 FF FF 4D 8B 01 44 89 47 08 66 C7 47 0C 08 00 66 C7 47 0E 01 00 F8 C3 31 C0 F9 C3`.
+
+#### `directive_emit`
+Populates directive records from the parser dispatch by snapshotting opcode/operand metadata into the directive queue and advancing the tail pointer. The helper guards against table overflow and writes only as many operand descriptors as requested by the caller.
+
+```
+parser_record_label:
+    lea r10, [r15 - 0xF400]     ; directive_records_end
+    cmp r14, r10
+    jae overflow
+    xor edi, edi
+    mov [r14], rdi              ; zero low 8 bytes
+    mov [r14+8], rdi            ; zero high 8 bytes
+    mov byte [r14], al          ; opcode
+    movzx ecx, cl               ; arg_count (0–3)
+    mov word [r14+2], cx
+    cmp ecx, 0
+    je store_done
+    mov dword [r14+4], edx      ; operand 0
+    cmp ecx, 1
+    je store_done
+    mov dword [r14+8], r8d      ; operand 1
+    cmp ecx, 2
+    je store_done
+    mov dword [r14+12], r9d     ; operand 2
+store_done:
+    add r14, 16
+    clc
+    ret
+overflow:
+    xor eax, eax
+    stc
+    ret
+```
+
+Final encoding (69 bytes):
+`4D 8D 97 00 0C FF FF 4D 39 D6 73 35 31 FF 49 89 3E 49 89 7E 08 41 88 06 0F B6 C9 66 41 89 4E 02 83 F9 00 74 16 41 89 56 04 83 F9 01 74 0D 45 89 46 08 83 F9 02 74 04 45 89 4E 0C 49 83 C6 10 F8 C3 31 C0 F9 C3`.
+
+#### Remaining Helpers
+- `match_directive`: directive keyword matcher (still stubbed).
+
+Future revisions will translate each sketch into byte-perfect sequences inside the manifest, with the analyzer ensuring displacement recalculation.
+    movzx edx, word [rcx+2]      ; token length
+    mov r11d, edx                ; preserve for storage
+    test edx, edx
+    je fail
+    mov esi, dword [rcx+4]       ; token storage offset
+    lea r8, [r12 + rsi]
+    mov rax, 0xcbf29ce484222325  ; FNV-1a offset basis
+    mov r10, 0x100000001b3       ; FNV-1a prime
+hash_loop:
+    movzx r9d, byte [r8]
+    xor al, r9b
+    imul rax, r10
+    inc r8
+    dec edx
+    jne hash_loop
+    lea rdi, [r15 - 0xDC00]      ; symbol_table base
+    mov ecx, 256                 ; MAX_LABELS
+probe:
+    mov r9, [rdi]
+    test r9, r9
+    je insert
+    cmp r9, rax
+    je duplicate
+    add rdi, 24                  ; advance to next slot
+    loop probe
+    jmp overflow
+insert:
+    mov [rdi], rax               ; hash
+    mov [rdi+8], esi             ; name_offset
+    mov word [rdi+12], r11w      ; name_length
+    mov word [rdi+14], 1         ; flags = defined
+    mov [rdi+16], rbx            ; value = current offset
+    clc
+    ret
+duplicate:
+overflow:
+fail:
+    xor eax, eax
+    stc
+    ret
+```
+
+Final encoding (124 bytes):
+`0F B7 51 02 41 89 D3 85 D2 74 6D 8B 71 04 4D 8D 04 34 48 B8 25 23 22 84 E4 9C F2 CB 49 BA B3 01 00 00 00 01 00 00 45 0F B6 08 44 30 C8 49 0F AF C2 49 FF C0 FF CA 75 EE 49 8D BF 00 24 FF FF B9 00 01 00 00 4C 8B 0F 4D 85 C9 74 0D 49 39 C1 74 1F 48 83 C7 18 E2 ED EB 1B 48 89 07 89 77 08 66 44 89 5F 0C 66 C7 47 0E 01 00 48 89 5F 10 F8 C3 31 C0 F9 C3 31 C0 F9 C3 31 C0 F9 C3`.
+
+#### `parser_queue_ref`
+Queues relocation entries for forward references by hashing the identifier token and reserving a slot in the relocation table. The cursor offset is fetched from `cursor_block` so callers do not need to preload it into registers, and failures signal semantic overflow via CF.
+
+```
+parser_queue_ref:
+    movzx edx, word [rcx+2]      ; token length
+    test edx, edx
+    je fail
+    mov esi, dword [rcx+4]       ; token storage offset
+    lea r8, [r12 + rsi]
+    mov rax, 0xcbf29ce484222325  ; FNV-1a offset basis
+    mov r10, 0x100000001b3       ; FNV-1a prime
+hash_loop:
+    movzx r9d, byte [r8]
+    xor al, r9b
+    imul rax, r10
+    inc r8
+    dec edx
+    jne hash_loop
+    lea rdi, [r15 - 0xA000]      ; relocation_table base
+    mov ecx, 256                 ; MAX_RELOCS
+scan_slot:
+    mov r9, [rdi]
+    test r9, r9
+    je found_slot
+    add rdi, 16
+    loop scan_slot
+    jmp overflow
+found_slot:
+    mov [rdi], rax               ; symbol hash
+    lea r9, [r15 - 0x6000]       ; cursor_block
+    mov r8, [r9]
+    mov dword [rdi+8], r8d       ; relocation target offset
+    mov word [rdi+12], 8         ; size = 8 bytes
+    mov word [rdi+14], 1         ; flags = little-endian absolute
+    clc
+    ret
+overflow:
+fail:
+    xor eax, eax
+    stc
+    ret
+```
+
+Final encoding (116 bytes):
+`0F B7 51 02 85 D2 74 68 8B 71 04 4D 8D 04 34 48 B8 25 23 22 84 E4 9C F2 CB 49 BA B3 01 00 00 00 01 00 00 45 0F B6 08 44 30 C8 49 0F AF C2 49 FF C0 FF CA 75 EE 49 8D BF 00 60 FF FF B9 00 01 00 00 4C 8B 0F 4D 85 C9 74 08 48 83 C7 10 E2 F2 EB 1F 48 89 07 4D 8D 8F 00 A0 FF FF 4D 8B 01 44 89 47 08 66 C7 47 0C 08 00 66 C7 47 0E 01 00 F8 C3 31 C0 F9 C3`.
+
+#### Remaining Helpers
+- `directive_emit`: writes opcode + operand descriptors into directive table, increments directive count stored in `r14`.
+
+Future revisions will translate each sketch into byte-perfect sequences inside the manifest, with the analyzer ensuring displacement recalculation.

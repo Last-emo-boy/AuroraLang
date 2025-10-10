@@ -1,0 +1,284 @@
+# Aurora Seed Interpreter Binary Manifest (Linux x86-64)
+
+header elf_header
+org 0x0000
+bytes 0x7F454C4602010100
+u64 0x0000000000000000
+u16 0x0002
+u16 0x003E
+u32 0x00000001
+u64 0x0000000000400080
+u64 0x0000000000000040
+u64 0x0000000000000000
+u32 0x00000000
+u16 0x0040
+u16 0x0038
+u16 0x0001
+u16 0x0000
+u16 0x0000
+u16 0x0000
+
+header program_header
+org 0x0040
+u32 0x00000001
+u32 0x00000007
+u64 0x0000000000000000
+u64 0x0000000000400000
+u64 0x0000000000400000
+u64 0x0000000000009000
+u64 0x0000000000009000
+u64 0x0000000000002000
+
+header text_section
+org 0x0080
+label entry_main
+# Prologue and CLI parsing (hex to be finalized)
+bytes 0x4883EC284889E548895DF848896DF0488975E8
+bytes 0x48897DE0488B7D08488B7708488B7F10
+bytes 0x48897DE8488D3D5C010000488D3528010000
+bytes 0xE842000000 # call lexer_next_token
+
+label syscalls
+# sys_open
+bytes 0xB8020000000F05C3
+# sys_read
+bytes 0xB8000000000F05C3
+# sys_write
+bytes 0xB8010000000F05C3
+# sys_close
+bytes 0xB8030000000F05C3
+# sys_exit
+bytes 0xB83C0000000F05C3
+
+label zero_buffers
+bytes 0x48C7C70060400000
+bytes 0x48C7C10008000000
+bytes 0x48C7C000000000
+bytes 0xF348AB
+
+label lexer_next_token
+label lexer_loop
+bytes 0x0FB60E80F920740580F90974F5
+bytes 0x80F90A740F80F90D740880F90A75E3
+
+label emit_identifier
+bytes 0x41B0016641890000448810
+
+label reloc_apply
+bytes 0x4C8B2D000000004D85ED741A4C8B2500000000 # displacement pending
+bytes 0x498B0424FF15000000004D8B60084C890428
+bytes 0x4983C41049FFCD75E4
+
+label parser_loop
+bytes 0xE8A7FFFFFF4885C0744888C84180F8017509
+bytes 0xE8F9000000E9E4FFFFFF # call match_directive
+bytes 0x80F8027515E8ED000000 # call directive_emit
+bytes 0x84C0751E4883C104E9CDFFFFFF
+
+label parse_header
+bytes 0x48B90000000000000000
+bytes 0xE8D40000004889C7 # call parser_expect_identifier
+
+label parse_org
+bytes 0xE8E20000004889C3E8D3010000 # call parser_expect_numeric / parser_apply_org
+
+label parse_numeric
+bytes 0xE8D50000004889D948C1E0034889D9 # call parser_expect_numeric
+
+label parse_bytes
+bytes 0xE8C90000004889C6E894010000 # call parser_expect_bytes / parser_emit_bytes
+
+label parse_label
+bytes 0xE8A30000004889C1E815020000 # call parser_expect_identifier / parser_record_label
+
+label parse_ref
+bytes 0xE8930000004889C1E818020000 # call parser_expect_identifier / parser_queue_ref
+
+label parse_pad
+bytes 0xE89C0000004889C1E8FE010000 # call parser_expect_numeric / parser_emit_pad
+
+label parse_ascii
+bytes 0xE8620100004889F0E837020000 # call parser_expect_string / parser_emit_ascii
+
+label error_usage
+bytes 0x488D3D00000000BA0D000000BF01000000E853000000 # call error_exit
+
+label error_syntax
+bytes 0x488D3D00000000BA10000000BF03000000E83D000000 # call error_exit
+
+label error_semantic
+bytes 0x488D3D00000000BA12000000BF04000000E827000000 # call error_exit
+
+label error_overflow
+bytes 0x488D3D00000000BA0E000000BF05000000E811000000 # call error_exit
+
+label error_exit
+bytes 0x4889F2BE01000000B8010000000F0589F80F05
+
+label match_directive
+# TODO(iteration11): Replace stub with helper sequence described in specs/aurs_interpreter_helper_plan.md.
+bytes 0x31C0C3
+
+label directive_emit
+# Input: al = opcode, cl = arg count, rdx/r8d/r9d = operand descriptors, r14 = directive tail pointer, r15 = output buffer base
+# Output: writes directive record (16 bytes) and advances r14; CF set on overflow
+bytes 0x4D8D97000CFFFF4D39D6733531FF4989
+bytes 0x3E49897E084188060FB6C96641894E02
+bytes 0x83F90074164189560483F901740D4589
+bytes 0x460883F902740445894E0C4983C610F8
+bytes 0xC331C0F9C3
+
+label parser_expect_identifier
+# Input: rbx = token index, r13 = token records base, r12 = token storage base
+# Output: rax = token record pointer, CF cleared on success, set on failure
+bytes 0x498D44DD000FB610
+bytes 0x80FA01750548FFC3
+bytes 0xF8C331C0F9C3
+
+label parser_expect_numeric
+# Input: rbx = token index, r13 = token records base, r12 = token storage base
+# Output: rax = parsed 64-bit value, CF cleared on success, set on failure
+bytes 0x498D44DD000FB610
+bytes 0x80FA0275770FB748
+bytes 0x0285C9746F8B5004
+bytes 0x4C01E2440FB64001
+bytes 0x41F6C002740C83F9
+bytes 0x0272594883C20283
+bytes 0xE90283F910774D85
+bytes 0xC974494531C90FB6
+bytes 0x0248FFC23C30723C
+bytes 0x3C3976123C417204
+bytes 0x3C46760E3C61722C
+bytes 0x3C66760CEB262C30
+bytes 0xEB0C2C41040AEB06
+bytes 0x2C61040AEB0049C1
+bytes 0xE1040FB6C04909C1
+bytes 0xFFC975C248FFC34C
+bytes 0x89C8F8C331C0F9C3
+
+label parser_expect_bytes
+# Input: rbx = token index, r13 = token records base, r12 = token storage base
+# Output: rax = pointer to hex data, rcx = byte count, CF cleared on success
+bytes 0x498D44DD000FB610
+bytes 0x80FA0275380FB748
+bytes 0x0285C974308B5004
+bytes 0x4C01E2440FB64001
+bytes 0x41F6C002740C83F9
+bytes 0x02721A4883C20283
+bytes 0xE90285C9740FF6C1
+bytes 0x01750AD1E94889D0
+bytes 0x48FFC3F8C331C031
+bytes 0xC9F9C3
+
+label parser_expect_string
+# Input: rbx = token index, r13 = token records base, r12 = token storage base
+# Output: rax/rsi = pointer to literal bytes, rcx = length, CF cleared on success
+bytes 0x498D54DD000FB602
+bytes 0x3C0375120FB74A02
+bytes 0x8B42044C01E04889
+bytes 0xC648FFC3F8C331C0
+bytes 0x31C931F6F9C3
+
+label parser_apply_org
+# Input: rbx = requested absolute offset, r15 = output buffer base
+# Output: cursor updated on success, CF set on backward/overflow
+bytes 0x4D8D8F00A0FFFF49
+bytes 0x8B014839C3721F48
+bytes 0x81FB00000100770F49
+bytes 0x8919493B59087604
+bytes 0x49895908F8C34889
+bytes 0xC331C0F9C34889C3
+bytes 0x31C0F9C3
+
+label parser_emit_bytes
+# Input: rsi = source pointer, rcx = length, rbx = cursor offset, r15 = output buffer base
+# Output: rbx advanced to new cursor offset, CF cleared on success, set on overflow
+bytes 0x488D140B4881FA00
+bytes 0x00010077254885C9
+bytes 0x7407498D3C1FFCF3
+bytes 0xA44889D34D8D8700
+bytes 0xA0FFFF498918493B
+bytes 0x5808760449895808
+bytes 0xF8C331C0F9C3
+
+label parser_record_label
+# Input: rcx = token record pointer, rbx = current offset, r12 = token storage base, r15 = output buffer base
+# Output: registers updated with symbol table entry on success, CF set on duplicate/overflow
+bytes 0x0FB751024189D385
+bytes 0xD2746D8B71044D8D04
+bytes 0x3448B825232284E49C
+bytes 0xF2CB49BAB301000000
+bytes 0x010000450FB6084430
+bytes 0xC8490FAFC249FFC0FF
+bytes 0xCA75EE498DBF0024FF
+bytes 0xFFB9000100004C8B0F
+bytes 0x4D85C9740D4939C174
+bytes 0x1F4883C718E2EDEB1B
+bytes 0x488907897708664489
+bytes 0x5F0C66C7470E010048
+bytes 0x895F10F8C331C0F9C3
+bytes 0x31C0F9C331C0F9C3
+
+label parser_queue_ref
+# Input: rcx = identifier token record, r12 = token storage base, r15 = output buffer base
+# Output: enqueues relocation entry capturing symbol hash and current cursor offset, CF set on overflow
+bytes 0x0FB7510285D274688B71044D8D0434
+bytes 0x48B825232284E49CF2CB49BAB3010000
+bytes 0x00010000450FB6084430C8490FAFC2
+bytes 0x49FFC0FFCA75EE498DBF0060FFFFB9
+bytes 0x000100004C8B0F4D85C974084883C7
+bytes 0x10E2F2EB1F4889074D8D8F00A0FFFF
+bytes 0x4D8B014489470866C7470C080066C7
+bytes 0x470E0100F8C331C0F9C3
+
+label parser_emit_pad
+# Input: rcx = target absolute offset, rbx = current cursor, r15 = output buffer base
+# Output: rbx advanced to target with zero fill, CF cleared on success, set on failure
+bytes 0x4839D9723D4989C8
+bytes 0x4881F90000010077
+bytes 0x2D4889CA4829DA74
+bytes 0x0C498D3C1F31C048
+bytes 0x89D1FCF3AA4C89C3
+bytes 0x4D8D8F00A0FFFF49
+bytes 0x8919493B59087604
+bytes 0x49895908F8C331C0
+bytes 0xF9C331C0F9C3
+
+label parser_emit_ascii
+# Input: rax = string data pointer, rcx = raw token length, rbx = cursor, r15 = output buffer base
+# Output: emits decoded ASCII bytes (handling escapes) and advances cursor/high-water, CF on failure/overflow
+bytes 0x4989C04889C64889C748
+bytes 0x31D24885C9745E0FB606
+bytes 0x48FFC648FFC93C5C7544
+bytes 0x4885C90F84840000000F
+bytes 0xB60648FFC648FFC93C6E
+bytes 0x74163C7474163C727416
+bytes 0x3C3074163C2274163C5C
+bytes 0x7416EB61B00AEB14B009
+bytes 0xEB10B00DEB0C31C0EB08
+bytes 0xB022EB04B05CEB008807
+bytes 0x48FFC748FFC24885C975
+bytes 0xA24889D14C89C6488D14
+bytes 0x0B4881FA000001007725
+bytes 0x4885C97407498D3C1FFC
+bytes 0xF3A44889D34D8D8F00A0
+bytes 0xFFFF498919493B590876
+bytes 0x0449895908F8C331C0F9
+bytes 0xC331C031C931F6F9C3
+
+header data_tables
+org 0x2000
+label token_storage
+pad 0x2000
+label token_records
+pad 0x3000
+label directive_records
+pad 0x3800
+label symbol_table
+pad 0x3C00
+label relocation_table
+pad 0x4000
+label cursor_block
+pad 0x6000
+label output_buffer
+pad 0x10000
