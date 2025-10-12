@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\w33d\Documents\GitHub\AuroraLang\src\aurc_native\build\CMakeFiles\4af378894c95eeaba84edf72ebe02bc5\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{6429FD5C-1440-334F-AA01-C31DA55873B6}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

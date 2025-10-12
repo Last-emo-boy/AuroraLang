@@ -259,3 +259,12 @@
   1. Sync the helper encodings and tail-call structure back into `seed/interpreter/aurseed_linux.asmplan` and update the helper plan notes.
   2. Prepare targeted verification traces exercising each directive flow now that real queue entries are emitted.
   3. Evaluate relocation/application stages to ensure downstream passes can consume the populated directive queue without further stubbed logic.
+
+## 2025-10-13 — Iteration 28: Minimal ISA Roadmap & CNL Acceleration
+- Published `specs/aurora_minimal_isa.md`, defining the Stage 0 opcode surface, encoding strategy, and interpreter alignment for forthcoming compiler prototypes.
+- Updated `specs/stage0_plan.md` deliverables/work breakdown to include minimal ISA integration, documentation milestones, and validation hooks.
+- Extended `specs/aurora_translation_pipeline.md`, `specs/aurora_parser_design.md`, and `specs/aurora_language_standard.md` with links to the minimal ISA and a compressed Q4 acceleration schedule for CNL-to-`.aurs` compilation.
+- Next steps:
+  1. Flesh out encoding diagrams and helper references within `aurseed_linux.asmplan` to reflect the minimal ISA blocks.
+  2. Prototype the S0/S1 translators (CNL → SIG → `.aur`) using the narrowed grammar and tie them to the new ISA opcodes.
+  3. Stand up regression cases (manifest + binary) that exercise each minimal ISA instruction via the interpreter harness.

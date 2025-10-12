@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\w33d\Documents\GitHub\AuroraLang\src\aurc_native\src\compiler_stub.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\w33d\Documents\GitHub\AuroraLang\src\aurc_native\src\main.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\w33d\Documents\GitHub\AuroraLang\src\aurc_native\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{3E43C1EC-49D4-301E-B520-235B8B55F61C}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

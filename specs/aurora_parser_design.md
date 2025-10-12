@@ -6,6 +6,8 @@
 - Accept the Stage 3+ AuroraLang syntax defined in `specs/specification.md` (BNF subset) and produce a verified abstract syntax tree (AST).
 - Maintain a zero-dependency implementation path consistent with Stage 0/Stage 1 tooling—no parser generators.
 - Preserve enough semantic information to drive both bytecode emission (future VM) and `.aurs` manifest generation for Stage 0 bootstrap scenarios.
+- Capture concurrency-relevant annotations (ownership, `spawn` eligibility) to support the roadmap in `specs/aurora_concurrency_roadmap.md`.
+- Deliver the structures required by the compiler MVP (`specs/aurora_compiler_mvp_plan.md`), prioritizing Stage 0 grammar constructs.
 
 ## Scope (Iteration 10)
 - Tokenizer design covering keywords, identifiers, literals, delimiters, and comments.
@@ -55,8 +57,73 @@ Tokenizer emits `EOF` sentinel for parser loop.
 - **Strategy**: Hand-written recursive descent with Pratt-style expression parsing (precedence table for binary operators).
 - **Modules**: `parse_program` orchestrates module/import/type/fn declarations.
 - **Error Recovery**: Initial iteration stops at first error; later iterations can add panic-mode via synchronizing tokens (`;`, `}`).
+- **Statement Parsing**: `parse_statement` follows `specs/aurora_language_standard.md` §7.1 ordering, dispatching to `parse_let`, `parse_if`, `parse_while`, etc., before falling back to expression statements.
+
+### Expression Parsing Skeleton (Stage 0)
+```
+fn parse_expression(min_prec: u8) -> Expr {
+    let mut lhs = parse_prefix();
+    while let Some(op) = current_token_as_infix() {
+        let prec = precedence(op);
+        if prec < min_prec { break; }
+        let assoc = associativity(op);
+        advance();
+        let next_min = if assoc == Left { prec + 1 } else { prec };
+        let rhs = parse_expression(next_min);
+        lhs = Expr::Binary { left: lhs, op, right: rhs };
+    }
+    lhs
+}
+
+fn parse_prefix() -> Expr {
+    match peek() {
+        Token::IntLiteral(val) => { advance(); Expr::Literal(int(val)) }
+        Token::Ident(name) => { advance(); parse_postfix(Expr::Ident(name)) }
+        Token::LParen => {
+            advance();
+            let expr = parse_expression(0);
+            expect(Token::RParen);
+            expr
+        }
+        _ => error("unexpected token in expression")
+    }
+}
+
+fn parse_postfix(mut expr: Expr) -> Expr {
+    loop {
+        match peek() {
+            Token::LParen => {
+                // function call
+                advance();
+                let args = parse_argument_list();
+                expect(Token::RParen);
+                expr = Expr::Call { callee: expr, args };
+            }
+            _ => break,
+        }
+    }
+    expr
+}
+
+fn parse_argument_list() -> Vec<Expr> {
+    let mut args = Vec::new();
+    if peek() != Token::RParen {
+        loop {
+            args.push(parse_expression(0));
+            if peek() == Token::Comma {
+                advance();
+                continue;
+            }
+            break;
+        }
+    }
+    args
+}
+```
+> Stage 0 Scope — Prefix parsing omits unary operators; add them once the language standard stabilizes `!`/`-` semantics.
 
 ### Precedence Table (high → low)
+> Synchronize with `specs/aurora_language_standard.md` §6.1; unary entries reflect future extensions even if Stage 0 skips some operators.
 1. Unary: `!`, `-`.
 2. Multiplicative: `*`, `/`, `%`.
 3. Additive: `+`, `-`.
@@ -119,8 +186,8 @@ Type expressions and generics are maintained in canonical forms for the later ty
 
 ## Integration with `.aurs` Generation
 1. **AST Walk**: Convert top-level declarations to directive plans (function tables, string pools, static data).
-2. **Directive Plan**: Structured list describing what `.aurs` blocks to emit (`header`, `org`, `label`, etc.).
-3. **Emitter**: Serialize plan to textual `.aurs`, reusing existing manifest conventions.
+2. **Directive Plan**: Structured list describing what `.aurs` blocks to emit (`header`, `org`, `label`, etc.), now keyed to the minimal ISA opcodes defined in `specs/aurora_minimal_isa.md`.
+3. **Emitter**: Serialize plan to textual `.aurs`, reusing existing manifest conventions and emitting 16-byte instruction blocks that the interpreter consumes.
 
 Initial focus: compile a restricted Aurora subset (module-less script with a single `fn main()`) into a `.aurs` manifest that the handcrafted interpreter can turn into a stub ELF printing constants (smoke test).
 

@@ -1,0 +1,13 @@
+module demo {
+    fn main() -> int {
+        let numerator: int = 355;
+        let denominator: int = 113;
+        let scale: int = 1000;
+
+        let temp: int = numerator * scale;
+        let pi_scaled: int = temp / denominator;
+
+        request service exit(pi_scaled);
+        return pi_scaled;
+    }
+}

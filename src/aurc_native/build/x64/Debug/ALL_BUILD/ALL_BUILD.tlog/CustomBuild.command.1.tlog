@@ -1,0 +1,10 @@
+^C:\USERS\W33D\DOCUMENTS\GITHUB\AURORALANG\SRC\AURC_NATIVE\CMAKELISTS.TXT
+setlocal
+C:\Strawberry\c\bin\cmake.exe -SC:/Users/w33d/Documents/GitHub/AuroraLang/src/aurc_native -BC:/Users/w33d/Documents/GitHub/AuroraLang/src/aurc_native/build --check-stamp-file C:/Users/w33d/Documents/GitHub/AuroraLang/src/aurc_native/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

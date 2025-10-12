@@ -1,0 +1,14 @@
+module demo {
+    fn main() -> int {
+        let accumulator: int = 0;
+        let counter: int = 4;
+
+        while counter > 0 {
+            accumulator = accumulator + counter;
+            counter = counter - 1;
+        }
+
+        request service exit(accumulator);
+        return accumulator;
+    }
+}

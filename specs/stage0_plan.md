@@ -18,6 +18,12 @@
 - `specs/stage0_asm_notes.md`: canonical instruction byte sequences for both platforms.
 - `seed/scripts/verify_stage0.py`: verification harness enforcing output, exit codes, and hash integrity.
 - `specs/tooling_constraints.md`: policy reference assuring no borrowed tooling touches the build.
+- `specs/aurora_minimal_isa.md`: authoritative definition of the Stage 0 minimal instruction set and its mapping to `.aurs` directives.
+- `specs/aurora_translation_pipeline.md`: updated with accelerated milestones for natural-language-to-ISA compilation.
+- `specs/aurora_concurrency_roadmap.md`: trajectory for multithreading features influencing metadata captured during Stage 0.
+- `specs/aurora_compiler_mvp_plan.md`: defines the MVP compiler deliverables that rely on Stage 0 infrastructure.
+- `docs/manual_compilation_walkthrough.md`: hand-authored reference for `.aur` → `.aurs` lowering prior to automated tooling.
+- `specs/aurc_native_rewrite_plan.md`: outlines the transition from Python tooling to a native, standalone compiler.
 
 ## Work Breakdown
 
@@ -37,6 +43,12 @@
 - [ ] Embed assertions in scripts to validate offsets before writing files.
 - [ ] Provide CLI entry points via `Makefile`: `stage0-linux`, `stage0-windows`, and `stage0-verify`.
 
+### 3b. Minimal ISA Definition & Integration
+- [ ] Finalize the Stage 0 minimal instruction set (`specs/aurora_minimal_isa.md`) with opcode semantics, operand formats, and `.aurs` directive coverage.
+- [ ] Produce worked examples that translate simple Aurora snippets into minimal ISA sequences using existing interpreter helpers.
+- [ ] Update `aurseed_linux.aurs` planning notes to reference instruction definitions where manifests rely on equivalent behavior.
+- [ ] Derive verification vectors that ensure the interpreter faithfully executes the minimal ISA (unit tests plus end-to-end manifest traces).
+
 ### 4. Verification & Hashing
 - [ ] Implement `seed/scripts/verify_stage0.py` to:
   - [ ] Run binaries on their native hosts (Linux, Windows/Wine) capturing stdout.
@@ -54,3 +66,18 @@
 - [ ] Verification harness passes on targeted hosts.
 - [ ] Documentation reviewed and linked from iteration log.
 - [ ] Hash manifest generated and signed (once signing infrastructure exists).
+- [ ] Minimal ISA spec ratified and referenced by interpreter/compiler deliverables.
+- [ ] Natural-language pipeline milestones (CNL subset + `.aur` lowering) aligned with ISA coverage.
+
+## Current Status (2025-10-12)
+- Parser/interpreter helpers implemented; directive queue now records real operand metadata (see `specs/aurseed_offset_worklog.md`).
+- Minimal ISA draft published with encoding guidance embedded in `seed/interpreter/aurseed_linux.asmplan`.
+- Natural-language translation pipeline now anchored by `specs/aurora_cnl_to_aur_plan.md`, detailing lexer/parser/SIG milestones for the CNL compiler front-end.
+
+## Next Actions
+1. Execute `specs/aurora_cnl_to_aur_plan.md` Milestone M0 by refining the lexer design and seeding test fixtures, building on the published vocabulary catalog.
+2. Promote the new minimal ISA worked examples (`specs/aurora_minimal_isa.md` §5) into regression fixtures by translating them into real manifests.
+3. Schedule validation tasks: manifest-driven smoke tests per instruction, plus small CNL-to-manifest conversions exercising the new ISA subset.
+4. Annotate interpreter helpers with placeholders for concurrency metadata (e.g., thread-safe flags) per the roadmap.
+5. Sync Stage 0 documentation with `specs/aurora_compiler_mvp_plan.md` timelines to keep bootstrap artifacts aligned.
+6. Prepare the Stage N1 native compiler scaffold per `specs/aurc_native_rewrite_plan.md` to begin phasing out the Python prototype.

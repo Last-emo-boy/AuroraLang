@@ -1,0 +1,8 @@
+module demo {
+    fn main() -> int {
+        let message: string = "OK\n";
+        request service print(message);
+        request service exit(0);
+        return 0;
+    }
+}

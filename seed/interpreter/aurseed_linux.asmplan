@@ -260,6 +260,25 @@ error_exit:
 
 > The following sketches describe the helpers now encoded in `aurseed_linux.aurs`. Registers adhere to the conventions documented earlier in this file and in `specs/aurs_interpreter_helper_plan.md`; see `specs/aurseed_offset_worklog.md` for current offsets/lengths.
 
+### Minimal ISA Encoding Reference
+- Canonical opcode table lives in `specs/aurora_minimal_isa.md`; this section records how each instruction occupies a single 16-byte directive entry.
+- Layout (byte offsets within the 16-byte slot):
+    - `[0]` opcode id (matches `aurora_minimal_isa` table).
+    - `[1]` condition / operand mode flags.
+    - `[2]` destination register id.
+    - `[3]` source register A id.
+    - `[4]` source register B id or predicate selector.
+    - `[5:12]` immediate / displacement (little-endian, 56 bits used).
+    - `[12:16]` reserved for interpreter bookkeeping (queue index, checksum).
+- Directive emission:
+    - `parse_*_impl` helpers set `al` = opcode, `cl` = operand count, and spread register/immediate metadata across `rdx/r8/r9` so `directive_emit` fills the slot.
+    - Label targets rely on `parser_record_label` + `parser_queue_ref`; relocations patch `[5:12]` once symbol addresses resolve.
+- Example encodings:
+    - `mov r1, #imm64` → opcode `0x01`, `[2]=0x01`, `[3]=0xFF` (immediate sentinel), `[5:12]=imm64`.
+    - `cjmp z, label` → opcode `0x08`, `[1]=0x01` (zero flag), `[5:12]=rel32` computed by installer.
+    - `svc 0x01` → opcode `0x0B`, `[5]=0x01`, remaining bytes zeroed.
+- When expanding the interpreter execution loop, ensure it reads the same 16-byte layout; helper offsets already assume this stride.
+
 #### `match_directive`
 Inputs: `rsi` = pointer to active token record, `rdi` = keyword index table base (`kw_table`), `rcx` = keyword count (11). Uses global `r12` for token storage base and walks keyword pointer table via `rdx`.
 
