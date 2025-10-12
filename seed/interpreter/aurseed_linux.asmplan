@@ -120,30 +120,43 @@ emit_identifier:
 ```
 
 ### Directive Dispatch Loop
-```
-parse_loop:
-    call lexer_next_token
-    cmp al, TOKEN_EOF
-    je emit_pass
-    cmp al, TOKEN_IDENTIFIER
-    jne syntax_error
-    ; Compare identifier string to known directives
-    call match_directive
-    ; Fill directive table entry at [r14 + directive_index * 16]
-```
 
-Hex sequence plan:
+> Update (2025-10-13): each directive stub now consists of a `call parse_*_impl` followed by a short `jmp parser_loop`, padded with NOPs to preserve legacy stub lengths. The `_impl` helpers live immediately after the stub block and handle operand parsing + directive queuing before returning to the dispatcher.
 ```
 parse_loop:
-    E8 34 01 00 00        call lexer_next_token
-    3C 00                 cmp al, 0
-    0F 84 90 00 00 00     je emit_pass
-    3C 01                 cmp al, 1
-    0F 85 80 00 00 00     jne error_syntax
-    E8 80 01 00 00        call match_directive
-    48 8D 14 95 00 20 40 00  lea rdx, [r14 + rdx*4 + directive_base]
-    E8 C0 01 00 00        call directive_emit
-    E9 40 FF FF FF        jmp parse_loop
+    call lexer_next_token              ; returns rax = token record pointer, zero on EOF
+    test rax, rax
+    je parser_done
+    mov rsi, rax                       ; match_directive expects token pointer in rsi
+    movzx edx, byte [rsi]              ; token type byte
+    cmp dl, TOKEN_IDENTIFIER
+    jne error_syntax
+    lea rdi, [r12 + 0x0F00]            ; kw_table = token_storage + 0x0F00
+    mov ecx, 11                        ; directive keyword count
+    call match_directive
+    jc error_syntax
+    cmp al, OPC_HEADER
+    je parse_header
+    cmp al, OPC_ORG
+    je parse_org
+    cmp al, OPC_U8
+    jb error_syntax                    ; opcodes 3–6 handled by parse_numeric
+    cmp al, OPC_U64
+    jbe parse_numeric
+    cmp al, OPC_BYTES
+    je parse_bytes
+    cmp al, OPC_LABEL
+    je parse_label
+    cmp al, OPC_REF
+    je parse_ref
+    cmp al, OPC_PAD
+    je parse_pad
+    cmp al, OPC_ASCII
+    je parse_ascii
+    jmp error_syntax
+
+parser_done:
+    ret
 ```
 
 ### Emission Routines
@@ -243,63 +256,58 @@ error_exit:
 - Draft relocation table structures for label handling.
 - Author complementary Windows skeleton once Linux version validated.
 
-### Helper Routines (Iteration 11 Plan)
+### Helper Routines (Implementation Notes)
 
-> The following sketches replace the `xor eax, eax; ret` placeholders in `aurseed_linux.aurs`. Registers adhere to the conventions documented earlier in this file and in `specs/aurs_interpreter_helper_plan.md`.
+> The following sketches describe the helpers now encoded in `aurseed_linux.aurs`. Registers adhere to the conventions documented earlier in this file and in `specs/aurs_interpreter_helper_plan.md`; see `specs/aurseed_offset_worklog.md` for current offsets/lengths.
 
 #### `match_directive`
-Inputs: `rsi` = pointer to active token record, `rdi` = keyword index table base (`kw_table`), `rcx` = keyword count (11).
+Inputs: `rsi` = pointer to active token record, `rdi` = keyword index table base (`kw_table`), `rcx` = keyword count (11). Uses global `r12` for token storage base and walks keyword pointer table via `rdx`.
 
 Pseudo-assembly:
 ```
 match_directive:
-    push rbx                    ; preserve caller-saved scratch
-    xor eax, eax                ; opcode accumulator
-    mov rbx, [rsi+4]            ; token storage offset
-    mov r8w, [rsi+2]            ; token length
-    mov r9, kw_table            ; keyword pointer walker
+    movzx r9d, word [rsi+2]     ; token length (bytes)
+    test  r9d, r9d
+    je    no_match              ; empty token cannot match directive
+    mov   edx, dword [rsi+4]
+    add   rdx, r12              ; convert storage offset → pointer
+    mov   r8, rdx               ; cache token pointer
+    mov   rdx, rdi              ; keyword pointer walker
+    xor   eax, eax
+    mov   al, 1                 ; opcode accumulator (1-based)
+
 loop_keywords:
-    cmp rcx, 0
-    je no_match
-    mov r10, [rdi]              ; fetch keyword pointer
-    mov rdx, r10
-    mov r11, rbx
-    mov r12w, 0
-compare_loop:
-    mov al, [rdx]
-    mov bl, [r11]
-    cmp al, bl
-    jne advance_keyword
-    test al, al
-    je found_match
-    inc rdx
-    inc r11
-    inc r12w
-    cmp r12w, r8w
-    jne compare_loop
-    mov al, [rdx]
-    test al, al
-    jne advance_keyword         ; directive token longer than keyword
-found_match:
-    pop rbx
-    mov al, cl                  ; opcode = keyword index + 1
-    inc al
+    test  rcx, rcx
+    je    no_match
+    mov   r11, rcx              ; preserve remaining keyword count
+    mov   rdi, [rdx]            ; load keyword pointer
+    mov   rsi, r8
+    mov   ecx, r9d              ; compare token-length bytes
+    repe  cmpsb
+    jne   advance_keyword       ; mismatch before exhausting token
+    movzx r10d, byte [rdi]      ; ensure keyword terminator reached
+    test  r10d, r10d
+    jne   advance_keyword
+    clc
     ret
+
 advance_keyword:
-    add rdi, 8                  ; next pointer in kw index table
-    dec rcx
-    jmp loop_keywords
+    mov   rcx, r11
+    inc   al                    ; advance opcode id
+    add   rdx, 8                ; next keyword pointer
+    dec   rcx
+    jne   loop_keywords
+
 no_match:
-    pop rbx
-    stc                         ; signal failure via carry flag
-    xor eax, eax
+    xor   eax, eax
+    stc
     ret
 ```
 
 Hex notes:
-- Loop uses `cmp rcx, 0 / je` sentinel; ensure fall-through handles EOF keyword (empty string).
-- To keep encoding short, `rcx` doubles as countdown; initialize with keyword count before call.
-- Caller inspects CF to jump to `error_syntax`.
+- Relies on zero-cleared DF so that `repe cmpsb` walks forward.
+- Each iteration restores `rcx` from `r11` before advancing to the next keyword pointer.
+- Caller inspects CF to branch to syntax error when no directive matches.
 
 #### `parser_expect_identifier`
 Inputs: `rbx` = token cursor index, `r13` = &token_records[0], `r12` = &token_storage[0].
@@ -714,7 +722,7 @@ Final encoding (69 bytes):
 #### Remaining Helpers
 - `match_directive`: directive keyword matcher (still stubbed).
 
-Future revisions will translate each sketch into byte-perfect sequences inside the manifest, with the analyzer ensuring displacement recalculation.
+The manifest now hosts these byte-perfect sequences; rerun `tools/manifest_analyzer.py` after any edits to confirm displacement stability.
     movzx edx, word [rcx+2]      ; token length
     mov r11d, edx                ; preserve for storage
     test edx, edx
@@ -810,4 +818,4 @@ Final encoding (116 bytes):
 #### Remaining Helpers
 - `directive_emit`: writes opcode + operand descriptors into directive table, increments directive count stored in `r14`.
 
-Future revisions will translate each sketch into byte-perfect sequences inside the manifest, with the analyzer ensuring displacement recalculation.
+The manifest now hosts these byte-perfect sequences; rerun `tools/manifest_analyzer.py` after any edits to confirm displacement stability.
