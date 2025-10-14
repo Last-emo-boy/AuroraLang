@@ -90,7 +90,7 @@ bytes 0x33C0
 bytes 0xFF15C30D0000
 bytes 0x33C9
 bytes 0xFF15BB0D0000
-bytes 0xCC
+bytes 0xCC 
 pad 0x0400
 
 header rdata_section

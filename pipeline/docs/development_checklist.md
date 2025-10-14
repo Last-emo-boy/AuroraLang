@@ -5,10 +5,10 @@
 - [ ] 确认 legacy 依赖（`src/aurc_native`、`tools/aurc_mvp.py`）的保留策略。
 
 ## 编译器实现
-- [ ] 设计 Aurora 侧的数据结构表示指令（opcode、操作数、注释）。
-- [ ] 实现 manifest emitter（参考 `pipeline/src/manifest_emitter.guidelines.md`）。
-- [ ] 实现 `.aur` → IR 的解析与 lowering。
-- [ ] 提供 CLI/脚本，支持 `aurora-pipeline compile <input> -o <output>`。（原型：`pipeline/src/pipeline_driver.js`，目前仅覆盖字符串示例）
+- [x] 设计 Aurora 侧的数据结构表示指令（opcode、操作数、注释）。
+- [x] 实现 manifest emitter（参考 `pipeline/src/manifest_emitter.guidelines.md`）。
+- [x] 实现 `.aur` → IR 的解析与 lowering（目前支持字符串打印和算术循环）。
+- [x] 提供 CLI/脚本，支持 `aurora-pipeline compile <input> -o <output>`。（原型：`pipeline/src/pipeline_driver.js`）
 
 ## 示例与测试
 - [x] 迁移 `hello_world` 示例至 `pipeline/examples/`，并准备 legacy 对照 manifest。

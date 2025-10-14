@@ -23,8 +23,7 @@ typedef struct string_binding {
 typedef enum program_kind {
     PROGRAM_NONE = 0,
     PROGRAM_STRING = 1,
-    PROGRAM_LOOP_SUM = 2,
-    PROGRAM_PI_TEST = 3
+    PROGRAM_LOOP_SUM = 2
 } program_kind;
 
 typedef struct loop_ir {
@@ -35,23 +34,6 @@ typedef struct loop_ir {
     char exit_var[128];
     char return_var[128];
 } loop_ir;
-
-typedef struct pi_ir {
-    char numerator_var[128];
-    int numerator_value;
-    char denominator_var[128];
-    int denominator_value;
-    char scale_var[128];
-    int scale_value;
-    char temp_var[128];
-    char temp_lhs[128];
-    char temp_rhs[128];
-    char result_var[128];
-    char result_lhs[128];
-    char result_rhs[128];
-    char exit_var[128];
-    char return_var[128];
-} pi_ir;
 
 typedef struct program_ir {
     program_kind kind;
@@ -65,7 +47,6 @@ typedef struct program_ir {
     int have_exit;
     int have_return;
     loop_ir loop;
-    pi_ir pi;
 } program_ir;
 
 typedef enum isa_opcode {
@@ -419,157 +400,6 @@ static int parse_loop_sum_program(char lines[][2048], int line_count, program_ir
     return 0;
 }
 
-static int parse_pi_program(char lines[][2048], int line_count, program_ir *ir) {
-    int_binding bindings[8];
-    int binding_count = 0;
-    int have_mul = 0;
-    int have_div = 0;
-
-    memset(&ir->pi, 0, sizeof ir->pi);
-
-    for (int i = 0; i < line_count; ++i) {
-        const char *line = lines[i];
-
-        if (strncmp(line, "let ", 4) == 0) {
-            char name_buf[128];
-            char expr_buf[256];
-            if (sscanf(line, "let %127[^:]: int = %255[^;];", name_buf, expr_buf) == 2) {
-                char *name = trim(name_buf);
-                char *expr = trim(expr_buf);
-                if (strchr(expr, '*')) {
-                    if (have_mul) {
-                        fprintf(stderr, "aurc-native: multiple multiplication statements detected in pi program\n");
-                        return 1;
-                    }
-                    char lhs_buf[128];
-                    char rhs_buf[128];
-                    if (sscanf(expr, "%127[^*]*%127[^;]", lhs_buf, rhs_buf) != 2) {
-                        fprintf(stderr, "aurc-native: malformed multiplication expression in pi program\n");
-                        return 1;
-                    }
-                    char *lhs = trim(lhs_buf);
-                    char *rhs = trim(rhs_buf);
-                    strncpy(ir->pi.temp_var, name, sizeof ir->pi.temp_var - 1);
-                    ir->pi.temp_var[sizeof ir->pi.temp_var - 1] = '\0';
-                    strncpy(ir->pi.temp_lhs, lhs, sizeof ir->pi.temp_lhs - 1);
-                    ir->pi.temp_lhs[sizeof ir->pi.temp_lhs - 1] = '\0';
-                    strncpy(ir->pi.temp_rhs, rhs, sizeof ir->pi.temp_rhs - 1);
-                    ir->pi.temp_rhs[sizeof ir->pi.temp_rhs - 1] = '\0';
-                    have_mul = 1;
-                    continue;
-                }
-                if (strchr(expr, '/')) {
-                    if (have_div) {
-                        fprintf(stderr, "aurc-native: multiple division statements detected in pi program\n");
-                        return 1;
-                    }
-                    char lhs_buf[128];
-                    char rhs_buf[128];
-                    if (sscanf(expr, "%127[^/]/%127[^;]", lhs_buf, rhs_buf) != 2) {
-                        fprintf(stderr, "aurc-native: malformed division expression in pi program\n");
-                        return 1;
-                    }
-                    char *lhs = trim(lhs_buf);
-                    char *rhs = trim(rhs_buf);
-                    strncpy(ir->pi.result_var, name, sizeof ir->pi.result_var - 1);
-                    ir->pi.result_var[sizeof ir->pi.result_var - 1] = '\0';
-                    strncpy(ir->pi.result_lhs, lhs, sizeof ir->pi.result_lhs - 1);
-                    ir->pi.result_lhs[sizeof ir->pi.result_lhs - 1] = '\0';
-                    strncpy(ir->pi.result_rhs, rhs, sizeof ir->pi.result_rhs - 1);
-                    ir->pi.result_rhs[sizeof ir->pi.result_rhs - 1] = '\0';
-                    have_div = 1;
-                    continue;
-                }
-
-                char *endptr = NULL;
-                long long value = strtoll(expr, &endptr, 10);
-                if (endptr == expr || *endptr != '\0') {
-                    fprintf(stderr, "aurc-native: unsupported initializer in pi program for %s\n", name);
-                    return 1;
-                }
-                if (binding_count >= (int)(sizeof bindings / sizeof bindings[0])) {
-                    fprintf(stderr, "aurc-native: too many integer bindings in pi program\n");
-                    return 1;
-                }
-                strncpy(bindings[binding_count].name, name, sizeof bindings[binding_count].name - 1);
-                bindings[binding_count].name[sizeof bindings[binding_count].name - 1] = '\0';
-                bindings[binding_count].value = (int)value;
-                ++binding_count;
-                continue;
-            }
-        }
-
-        if (strncmp(line, "request service exit", sizeof "request service exit" - 1) == 0) {
-            if (sscanf(line, "request service exit(%127[^)]);", ir->pi.exit_var) != 1) {
-                fprintf(stderr, "aurc-native: malformed exit statement in pi program\n");
-                return 1;
-            }
-            char *trimmed = trim(ir->pi.exit_var);
-            memmove(ir->pi.exit_var, trimmed, strlen(trimmed) + 1);
-            continue;
-        }
-
-        if (strncmp(line, "return", 6) == 0) {
-            if (sscanf(line, "return %127[^;];", ir->pi.return_var) != 1) {
-                fprintf(stderr, "aurc-native: malformed return statement in pi program\n");
-                return 1;
-            }
-            char *trimmed = trim(ir->pi.return_var);
-            memmove(ir->pi.return_var, trimmed, strlen(trimmed) + 1);
-            continue;
-        }
-    }
-
-    if (!have_mul || !have_div) {
-        fprintf(stderr, "aurc-native: pi program requires multiplication and division statements\n");
-        return 1;
-    }
-
-    if (ir->pi.exit_var[0] == '\0' || ir->pi.return_var[0] == '\0') {
-        fprintf(stderr, "aurc-native: pi program must include exit and return statements\n");
-        return 1;
-    }
-
-    if (strcmp(ir->pi.exit_var, ir->pi.return_var) != 0) {
-        fprintf(stderr, "aurc-native: pi program exit and return targets must match\n");
-        return 1;
-    }
-
-    if (strcmp(ir->pi.result_var, ir->pi.exit_var) != 0) {
-        fprintf(stderr, "aurc-native: exit must target the pi result variable\n");
-        return 1;
-    }
-
-    if (strcmp(ir->pi.result_lhs, ir->pi.temp_var) != 0) {
-        fprintf(stderr, "aurc-native: pi result must divide the multiplication temporary\n");
-        return 1;
-    }
-
-    int_binding *mul_lhs = find_binding(bindings, binding_count, ir->pi.temp_lhs);
-    int_binding *mul_rhs = find_binding(bindings, binding_count, ir->pi.temp_rhs);
-    int_binding *den_binding = find_binding(bindings, binding_count, ir->pi.result_rhs);
-
-    if (!mul_lhs || !mul_rhs || !den_binding) {
-        fprintf(stderr, "aurc-native: pi program references undefined integer bindings\n");
-        return 1;
-    }
-
-    strncpy(ir->pi.numerator_var, mul_lhs->name, sizeof ir->pi.numerator_var - 1);
-    ir->pi.numerator_var[sizeof ir->pi.numerator_var - 1] = '\0';
-    ir->pi.numerator_value = mul_lhs->value;
-
-    strncpy(ir->pi.scale_var, mul_rhs->name, sizeof ir->pi.scale_var - 1);
-    ir->pi.scale_var[sizeof ir->pi.scale_var - 1] = '\0';
-    ir->pi.scale_value = mul_rhs->value;
-
-    strncpy(ir->pi.denominator_var, den_binding->name, sizeof ir->pi.denominator_var - 1);
-    ir->pi.denominator_var[sizeof ir->pi.denominator_var - 1] = '\0';
-    ir->pi.denominator_value = den_binding->value;
-
-    ir->kind = PROGRAM_PI_TEST;
-    return 0;
-}
-
 static int parse_source(FILE *fp, program_ir *ir) {
     char lines[256][2048];
     int line_count = 0;
@@ -607,18 +437,6 @@ static int parse_source(FILE *fp, program_ir *ir) {
 
     if (has_loop) {
         return parse_loop_sum_program(lines, line_count, ir);
-    }
-
-    int has_arithmetic_chain = 0;
-    for (int i = 0; i < line_count; ++i) {
-        if (strchr(lines[i], '*') != NULL || strchr(lines[i], '/') != NULL) {
-            has_arithmetic_chain = 1;
-            break;
-        }
-    }
-
-    if (has_arithmetic_chain) {
-        return parse_pi_program(lines, line_count, ir);
     }
 
     if (has_string_binding) {
@@ -728,41 +546,6 @@ static int emit_loop_manifest(const program_ir *ir, FILE *out, unsigned int *run
     return 0;
 }
 
-static int emit_pi_manifest(const program_ir *ir, FILE *out, unsigned int *runtime_flags) {
-    fprintf(out, "# Minimal ISA manifest for pi approximation test\n");
-    fprintf(out, "header minimal_isa\n");
-    fprintf(out, "org 0x0000\n");
-    fprintf(out, "label main\n");
-
-    if (ensure_signed_32_range(ir->pi.numerator_value, "numerator initializer") != 0) {
-        return 1;
-    }
-    if (ensure_signed_32_range(ir->pi.denominator_value, "denominator initializer") != 0) {
-        return 1;
-    }
-    if (ensure_signed_32_range(ir->pi.scale_value, "scale initializer") != 0) {
-        return 1;
-    }
-
-    char comment[256];
-    snprintf(comment, sizeof comment, "mov r1, #%d             ; %s", ir->pi.numerator_value, ir->pi.numerator_var);
-    emit_instruction_word(out, encode_mov_immediate(ISA_REG_R1, ir->pi.numerator_value), comment);
-
-    snprintf(comment, sizeof comment, "mov r2, #%d             ; %s", ir->pi.denominator_value, ir->pi.denominator_var);
-    emit_instruction_word(out, encode_mov_immediate(ISA_REG_R2, ir->pi.denominator_value), comment);
-
-    snprintf(comment, sizeof comment, "mov r3, #%d             ; %s", ir->pi.scale_value, ir->pi.scale_var);
-    emit_instruction_word(out, encode_mov_immediate(ISA_REG_R3, ir->pi.scale_value), comment);
-
-    emit_instruction_word(out, encode_mul_reg_reg(ISA_REG_R4, ISA_REG_R1, ISA_REG_R3), "mul r4, r1, r3           ; temp = numerator * scale");
-    emit_instruction_word(out, encode_rem_reg_reg(ISA_REG_R6, ISA_REG_R4, ISA_REG_R2), "rem r6, r4, r2           ; remainder (diagnostics)");
-    emit_instruction_word(out, encode_div_reg_reg(ISA_REG_R5, ISA_REG_R4, ISA_REG_R2), "div r5, r4, r2           ; pi_scaled = temp / denominator");
-    emit_instruction_word(out, encode_mov_register(ISA_REG_R0, ISA_REG_R5), "mov r0, r5             ; move result into r0");
-
-    *runtime_flags |= RUNTIME_EXIT_WITH_R0;
-    return 0;
-}
-
 static int emit_manifest(const program_ir *ir, const char *output_path) {
     FILE *out = fopen(output_path, "w");
     if (!out) {
@@ -776,8 +559,6 @@ static int emit_manifest(const program_ir *ir, const char *output_path) {
         rc = emit_string_manifest(ir, out, &runtime_flags);
     } else if (ir->kind == PROGRAM_LOOP_SUM) {
         rc = emit_loop_manifest(ir, out, &runtime_flags);
-    } else if (ir->kind == PROGRAM_PI_TEST) {
-        rc = emit_pi_manifest(ir, out, &runtime_flags);
     } else {
         fprintf(stderr, "aurc-native: unsupported program kind for emission\n");
     }
@@ -909,15 +690,6 @@ static int emit_c_source(const program_ir *ir, const char *path) {
         fprintf(out, "        %s = %s - 1;\n", ir->loop.counter, ir->loop.counter);
         fputs("    }\n", out);
         fprintf(out, "    return (int)%s;\n", ir->loop.accumulator);
-    } else if (ir->kind == PROGRAM_PI_TEST) {
-        fprintf(out, "    long long %s = %d;\n", ir->pi.numerator_var, ir->pi.numerator_value);
-        fprintf(out, "    long long %s = %d;\n", ir->pi.denominator_var, ir->pi.denominator_value);
-        fprintf(out, "    long long %s = %d;\n", ir->pi.scale_var, ir->pi.scale_value);
-        fprintf(out, "    long long %s = %s * %s;\n", ir->pi.temp_var, ir->pi.numerator_var, ir->pi.scale_var);
-        fprintf(out, "    long long remainder_value = %s %% %s;\n", ir->pi.temp_var, ir->pi.denominator_var);
-        fprintf(out, "    (void)remainder_value;\n");
-        fprintf(out, "    long long %s = %s / %s;\n", ir->pi.result_var, ir->pi.temp_var, ir->pi.denominator_var);
-        fprintf(out, "    return (int)%s;\n", ir->pi.result_var);
     } else {
         fprintf(stderr, "aurc-native: unsupported program kind for C emission\n");
         fclose(out);
@@ -1073,19 +845,6 @@ static int validate_program(program_ir *ir) {
         }
         if (strcmp(ir->loop.exit_var, ir->loop.accumulator) != 0 || strcmp(ir->loop.return_var, ir->loop.accumulator) != 0) {
             fprintf(stderr, "aurc-native: exit/return must target accumulator\n");
-            return 1;
-        }
-    } else if (ir->kind == PROGRAM_PI_TEST) {
-        if (ir->pi.numerator_var[0] == '\0' || ir->pi.denominator_var[0] == '\0' || ir->pi.scale_var[0] == '\0') {
-            fprintf(stderr, "aurc-native: pi program missing required bindings\n");
-            return 1;
-        }
-        if (ir->pi.denominator_value == 0) {
-            fprintf(stderr, "aurc-native: pi program denominator must be non-zero\n");
-            return 1;
-        }
-        if (strcmp(ir->pi.result_var, ir->pi.exit_var) != 0 || strcmp(ir->pi.return_var, ir->pi.result_var) != 0) {
-            fprintf(stderr, "aurc-native: pi program exit/return must target division result\n");
             return 1;
         }
     } else {

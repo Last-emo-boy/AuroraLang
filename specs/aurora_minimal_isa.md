@@ -118,23 +118,6 @@ halt
 - `cjmp` predicate `eq` stored in operand slot `[1]`; relocation resolves the branch target.
 - `jmp` encodes a label sentinel in operand slot `[1]`; relocation fills the displacement.
 
-### 5.3 Pi Approximation (Mul/Div/Rem)
-```
-label main
-bytes 0x0101FF0000000163  ; mov r1, #355             ; numerator
-bytes 0x0102FF0000000071  ; mov r2, #113             ; denominator
-bytes 0x0103FF00000003E8  ; mov r3, #1000            ; scale
-bytes 0x0D04010300000000  ; mul r4, r1, r3           ; r4 = numerator * scale
-bytes 0x0F06040200000000  ; rem r6, r4, r2           ; store remainder (optional diagnostics)
-bytes 0x0E05040200000000  ; div r5, r4, r2           ; r5 = truncated pi * 1000
-bytes 0x0100050000000000  ; mov r0, r5               ; move result into r0
-label __aur_runtime_exit_with_r0
-bytes 0x0B02000000000000  ; svc 0x02 exit(r0)
-halt
-```
-- Showcases the Stage 0 arithmetic helpers for `mul`, `div`, and `rem`.
-- The program exits with `3141` (truncated `π * 1000`) enabling CLI regression tests around arithmetic precision.
-
 ## 6. Implementation Roadmap
 
 ### Phase A — Specification Solidification

@@ -57,18 +57,6 @@ class LoopSumIR:
 
 
 @dataclass
-class PiCalcIR:
-    numerator: str
-    numerator_value: int
-    denominator: str
-    denominator_value: int
-    scale: str
-    scale_value: int
-    temp: str
-    result: str
-
-
-@dataclass
 class ProgramIR:
     kind: str
     string_bindings: List[StringBinding] = field(default_factory=list)
@@ -76,7 +64,6 @@ class ProgramIR:
     exit_call: Optional[ExitCall] = None
     return_stmt: Optional[ReturnStmt] = None
     loop_sum: Optional[LoopSumIR] = None
-    pi_calc: Optional[PiCalcIR] = None
 
 
 # ---------------------------------------------------------------------------
@@ -88,9 +75,6 @@ LET_STRING_RE = re.compile(
 )
 LET_INT_RE = re.compile(
     r"let\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*int\s*=\s*(?P<value>-?\d+)\s*;"
-)
-LET_INT_EXPR_RE = re.compile(
-    r"let\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*int\s*=\s*(?P<expr>.+?)\s*;"
 )
 PRINT_CALL_RE = re.compile(
     r"request\s+service\s+print\s*\(\s*(?P<arg>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*;"
@@ -117,13 +101,7 @@ ASSIGN_SUB_RE = re.compile(
 def parse_source(src: str) -> ProgramIR:
     if "while" in src:
         return parse_loop_sum_program(src)
-    try:
-        return parse_string_program(src)
-    except ValueError:
-        pass
-    if "*" in src or "/" in src:
-        return parse_pi_calc_program(src)
-    raise ValueError("Unsupported program shape for MVP compiler")
+    return parse_string_program(src)
 
 
 def parse_string_program(src: str) -> ProgramIR:
@@ -296,92 +274,6 @@ def parse_loop_sum_program(src: str) -> ProgramIR:
     return ProgramIR(kind="loop_sum", loop_sum=loop_ir)
 
 
-def parse_pi_calc_program(src: str) -> ProgramIR:
-    raw_lines = [line.strip() for line in src.splitlines() if line.strip() and not line.strip().startswith("//")]
-
-    int_bindings: dict[str, int] = {}
-    mul_stmt: Optional[dict[str, str]] = None
-    div_stmt: Optional[dict[str, str]] = None
-    exit_var: Optional[str] = None
-    return_var: Optional[str] = None
-
-    for line in raw_lines:
-        if line.startswith("module") or line.startswith("fn ") or line == "}":
-            continue
-
-        if match := LET_INT_RE.fullmatch(line):
-            name = match.group("name")
-            value = int(match.group("value"))
-            if name in int_bindings:
-                raise ValueError(f"Duplicate integer binding for `{name}` in pi program.")
-            int_bindings[name] = value
-            continue
-
-        if match := LET_INT_EXPR_RE.fullmatch(line):
-            name = match.group("name")
-            expr = match.group("expr").strip()
-            if "*" in expr:
-                if mul_stmt is not None:
-                    raise ValueError("Multiple multiplication statements encountered in pi program.")
-                lhs, rhs = [part.strip() for part in expr.split("*", 1)]
-                mul_stmt = {"target": name, "lhs": lhs, "rhs": rhs}
-                continue
-            if "/" in expr:
-                if div_stmt is not None:
-                    raise ValueError("Multiple division statements encountered in pi program.")
-                lhs, rhs = [part.strip() for part in expr.split("/", 1)]
-                div_stmt = {"target": name, "lhs": lhs, "rhs": rhs}
-                continue
-            raise ValueError(f"Unsupported expression `{expr}` in pi program.")
-
-        if match := EXIT_VAR_RE.fullmatch(line):
-            exit_var = match.group("name")
-            continue
-
-        if match := RETURN_VAR_RE.fullmatch(line):
-            return_var = match.group("name")
-            continue
-
-    if mul_stmt is None or div_stmt is None:
-        raise ValueError("Pi program must include multiplication and division lowering targets.")
-
-    if exit_var is None or return_var is None:
-        raise ValueError("Pi program requires exit and return statements.")
-
-    if exit_var != return_var:
-        raise ValueError("Pi program exit and return targets must match.")
-
-    if div_stmt["target"] != exit_var:
-        raise ValueError("Pi program exit must target the division result variable.")
-
-    if div_stmt["lhs"] != mul_stmt["target"]:
-        raise ValueError("Pi program division must consume the multiplication temporary.")
-
-    numerator_name = mul_stmt["lhs"]
-    scale_name = mul_stmt["rhs"]
-    denominator_name = div_stmt["rhs"]
-
-    if numerator_name not in int_bindings or scale_name not in int_bindings or denominator_name not in int_bindings:
-        raise ValueError("Pi program references undefined integer bindings.")
-
-    denominator_value = int_bindings[denominator_name]
-    if denominator_value == 0:
-        raise ValueError("Pi program denominator must be non-zero.")
-
-    pi_ir = PiCalcIR(
-        numerator=numerator_name,
-        numerator_value=int_bindings[numerator_name],
-        denominator=denominator_name,
-        denominator_value=denominator_value,
-        scale=scale_name,
-        scale_value=int_bindings[scale_name],
-        temp=mul_stmt["target"],
-        result=div_stmt["target"],
-    )
-
-    return ProgramIR(kind="pi_calc", pi_calc=pi_ir)
-
-
 # ---------------------------------------------------------------------------
 # Lowering helpers
 # ---------------------------------------------------------------------------
@@ -392,9 +284,6 @@ ISA_OPCODE_SUB = 0x05
 ISA_OPCODE_CMP = 0x06
 ISA_OPCODE_JMP = 0x07
 ISA_OPCODE_CJMP = 0x08
-ISA_OPCODE_MUL = 0x0D
-ISA_OPCODE_DIV = 0x0E
-ISA_OPCODE_REM = 0x0F
 
 ISA_OPERAND_LABEL = 0xFE
 ISA_OPERAND_IMMEDIATE = 0xFF
@@ -435,21 +324,6 @@ def encode_mov_register(dest_reg: str, source_reg: str) -> str:
 def encode_add_reg_reg(dest_reg: str, lhs: str, rhs: str) -> str:
     word = pack_instruction(ISA_OPCODE_ADD, register_to_id(dest_reg), register_to_id(lhs), register_to_id(rhs), 0)
     return f"bytes {word}  ; add {dest_reg}, {lhs}, {rhs}"
-
-
-def encode_mul_reg_reg(dest_reg: str, lhs: str, rhs: str) -> str:
-    word = pack_instruction(ISA_OPCODE_MUL, register_to_id(dest_reg), register_to_id(lhs), register_to_id(rhs), 0)
-    return f"bytes {word}  ; mul {dest_reg}, {lhs}, {rhs}"
-
-
-def encode_div_reg_reg(dest_reg: str, lhs: str, rhs: str) -> str:
-    word = pack_instruction(ISA_OPCODE_DIV, register_to_id(dest_reg), register_to_id(lhs), register_to_id(rhs), 0)
-    return f"bytes {word}  ; div {dest_reg}, {lhs}, {rhs}"
-
-
-def encode_rem_reg_reg(dest_reg: str, lhs: str, rhs: str) -> str:
-    word = pack_instruction(ISA_OPCODE_REM, register_to_id(dest_reg), register_to_id(lhs), register_to_id(rhs), 0)
-    return f"bytes {word}  ; rem {dest_reg}, {lhs}, {rhs}"
 
 
 def encode_sub_reg_imm(dest_reg: str, lhs: str, value: int) -> str:
@@ -500,10 +374,6 @@ def lower_to_manifest(ir: ProgramIR) -> List[str]:
         if ir.loop_sum is None:
             raise ValueError("Loop lowering requires loop metadata.")
         return lower_loop_sum(ir.loop_sum)
-    if ir.kind == "pi_calc":
-        if ir.pi_calc is None:
-            raise ValueError("Pi lowering requires parsed metadata.")
-        return lower_pi_calc(ir.pi_calc)
     raise ValueError(f"Unsupported program kind `{ir.kind}`.")
 
 
@@ -568,27 +438,6 @@ def lower_loop_sum(loop_ir: LoopSumIR) -> List[str]:
     lines.append(f"{encode_jmp('loop')}  ; loop back (placeholder displacement)")
     lines.append("label exit")
     lines.append(f"{encode_mov_register('r0', loop_ir.accumulator_reg)}  ; move result into r0")
-    lines.append("label __aur_runtime_exit_with_r0")
-    lines.append("bytes 0x0B02000000000000  ; svc 0x02 exit(r0)      ; exit with result")
-    lines.append("halt")
-
-    return lines
-
-
-def lower_pi_calc(pi_ir: PiCalcIR) -> List[str]:
-    lines: List[str] = []
-
-    lines.append("header minimal_isa")
-    lines.append("org 0x0000")
-    lines.append("label main")
-    lines.append(f"{encode_mov_immediate('r1', pi_ir.numerator_value)}  ; {pi_ir.numerator}")
-    lines.append(f"{encode_mov_immediate('r2', pi_ir.denominator_value)}  ; {pi_ir.denominator}")
-    lines.append(f"{encode_mov_immediate('r3', pi_ir.scale_value)}  ; {pi_ir.scale}")
-    lines.append(f"{encode_mul_reg_reg('r4', 'r1', 'r3')}  ; temp = {pi_ir.numerator} * {pi_ir.scale}")
-    lines.append(f"{encode_rem_reg_reg('r6', 'r4', 'r2')}  ; remainder (diagnostics)")
-    lines.append(f"{encode_div_reg_reg('r5', 'r4', 'r2')}  ; {pi_ir.result} = temp / {pi_ir.denominator}")
-    lines.append(f"{encode_mov_register('r0', 'r5')}  ; move result into r0")
-    lines.append("label __aur_runtime_exit_with_r0")
     lines.append("bytes 0x0B02000000000000  ; svc 0x02 exit(r0)      ; exit with result")
     lines.append("halt")
 
