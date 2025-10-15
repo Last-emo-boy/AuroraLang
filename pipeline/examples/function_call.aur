@@ -1,0 +1,16 @@
+module demo {
+    fn add(a: int, b: int) -> int {
+        let result: int = 0;
+        result = a + b;
+        return result;
+    }
+    
+    fn main() -> int {
+        let x: int = 5;
+        let y: int = 3;
+        let sum: int = 0;
+        
+        request service exit(8);
+        return 0;
+    }
+}

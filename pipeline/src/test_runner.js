@@ -19,6 +19,8 @@ const DRIVER = path.join(__dirname, 'pipeline_driver.js');
 const TEST_CASES = [
   { name: 'hello_world', matchType: 'set' },  // order-independent
   { name: 'loop_sum', matchType: 'exact' },   // exact byte-for-byte match
+  { name: 'conditional', matchType: 'exact' }, // if/else branching
+  { name: 'conditional_no_else', matchType: 'exact' }, // if without else
 ];
 
 class TestRunner {

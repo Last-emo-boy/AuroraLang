@@ -1,0 +1,25 @@
+module demo {
+    fn factorial(n: int) -> int {
+        let result: int = 1;
+        
+        if n > 1 {
+            let n_minus_1: int = 0;
+            n_minus_1 = n - 1;
+            let recursive_result: int = 0;
+            recursive_result = factorial(n_minus_1);
+            result = n * recursive_result;
+        }
+        
+        return result;
+    }
+    
+    fn main() -> int {
+        let n: int = 5;
+        let fact: int = 0;
+        
+        fact = factorial(n);
+        
+        request service exit(fact);
+        return fact;
+    }
+}

@@ -1,0 +1,15 @@
+module demo {
+    fn main() -> int {
+        let x: int = 5;
+        let result: int = 0;
+        
+        if x > 3 {
+            result = 10;
+        } else {
+            result = 20;
+        }
+        
+        request service exit(result);
+        return result;
+    }
+}

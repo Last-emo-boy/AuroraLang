@@ -1,0 +1,12 @@
+module demo {
+    fn main() -> int {
+        let counter: int = 7;
+        
+        if counter > 5 {
+            counter = counter - 2;
+        }
+        
+        request service exit(counter);
+        return counter;
+    }
+}

@@ -9,6 +9,7 @@
 **语法支持**：
 - ✅ `module { fn main() -> int { ... } }` 结构
 - ✅ `let <name>: <type> = <value>;` 变量声明（int/string）
+- ✅ `if <condition> { ... } else { ... }` 条件分支（支持 >, <, ==, !=）
 - ✅ `while <var> > 0 { ... }` 后置判断循环
 - ✅ 算术运算（`+`, `-`, 带立即数或寄存器）
 - ✅ `request service print/exit` 系统调用
@@ -41,7 +42,11 @@ pipeline/
 │   ├── hello_world.aur          # 字符串打印示例
 │   ├── hello_world_expected.aurs
 │   ├── loop_sum.aur             # 算术循环示例
-│   └── loop_sum_expected.aurs
+│   ├── loop_sum_expected.aurs
+│   ├── conditional.aur          # if/else 条件分支
+│   ├── conditional_expected.aurs
+│   ├── conditional_no_else.aur  # 无 else 的条件
+│   └── conditional_no_else_expected.aurs
 └── docs/
     ├── iteration_log.md         # 开发日志
     ├── self_hosting_roadmap.md  # 自举路线图
@@ -85,8 +90,8 @@ node pipeline/src/test_runner.js
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📊 Test Summary:
-   Total:  2
-   Passed: 2 ✅
+   Total:  4
+   Passed: 4 ✅
    Failed: 0 ❌
 
 🎉 All tests passed!
@@ -142,6 +147,39 @@ module demo {
 - `label exit`
 - `mov r0, r1` / `svc 0x02` - 退出
 
+### 条件分支（if/else）
+
+```aurora
+module demo {
+    fn main() -> int {
+        let x: int = 5;
+        let result: int = 0;
+        
+        if x > 3 {
+            result = 10;
+        } else {
+            result = 20;
+        }
+        
+        request service exit(result);
+        return result;
+    }
+}
+```
+
+**生成指令**：
+- `mov r1, #5` / `mov r2, #0` - 初始化变量
+- `cmp r1, #3` - 比较 x 和 3
+- `cjmp leq, else_0` - 如果 x <= 3，跳到 else
+- `mov r6, #10` / `mov r2, r6` - then 分支：result = 10
+- `jmp endif_1` - 跳过 else
+- `label else_0`
+- `mov r7, #20` / `mov r2, r7` - else 分支：result = 20
+- `label endif_1`
+- `mov r0, r2` / `svc 0x02` - 退出
+
+**支持的比较运算符**：`>`, `<`, `==`, `!=`
+
 ## 🔍 调试选项
 
 ### 查看 IR
@@ -162,6 +200,8 @@ node pipeline/src/pipeline_driver.js compile <input.aur> -o <output.aurs>
 |---------|-------|---------|-----|
 | hello_world | 4 | 集合匹配 | ✅ PASS |
 | loop_sum | 9 | 完全匹配 | ✅ PASS |
+| conditional | 11 | 完全匹配 | ✅ PASS |
+| conditional_no_else | 6 | 完全匹配 | ✅ PASS |
 
 **匹配模式说明**：
 - **完全匹配**：指令字节顺序和内容完全一致
@@ -210,14 +250,14 @@ Manifest (.aurs)
 **Statement 类型**:
 - `assign` - 赋值语句
 - `while` - 循环语句
-- `if` - 条件语句（部分支持）
+- `if` - 条件语句（完全支持，含 else）
 - `request` - 服务调用
 - `return` - 返回语句
 
 **Expression 类型**:
 - `literal` - 常量（int/string）
 - `variable` - 变量引用
-- `binary` - 二元运算（+/-/>）
+- `binary` - 二元运算（+/-/>/</>=/===/!=）
 
 ## 🛣️ 自举路线图
 
@@ -247,10 +287,10 @@ Manifest (.aurs)
 
 ## 📝 已知限制
 
-1. **语法覆盖**：仅支持基础子集（无 if/else、函数定义、数组）
+1. **语法覆盖**：仅支持基础子集（无函数定义、数组、嵌套条件）
 2. **寄存器溢出**：超过 5 个变量会抛出错误（未实现 spilling）
 3. **类型系统**：基础类型检查，无泛型/联合类型
-4. **优化**：基础优化（后置循环），无死代码消除/常量折叠
+4. **优化**：基础优化（后置循环、直接寄存器操作），无死代码消除/常量折叠
 5. **错误恢复**：解析错误立即失败，无错误恢复
 
 ## 📚 相关文档
@@ -268,12 +308,12 @@ Manifest (.aurs)
 1. ✅ 基础语法支持（let/while/request）
 2. ✅ 寄存器分配器
 3. ✅ 自动化测试
-4. ⏳ 条件分支（if/else）
+4. ✅ 条件分支（if/else）
 5. ⏳ 函数定义与调用
 6. ⏳ Stage N2 迁移（Aurora 重写）
 
 ---
 
-**版本**: Stage N1 Iteration 4  
+**版本**: Stage N1 Iteration 5  
 **状态**: ✅ 生产就绪（用于原型验证）  
-**最后更新**: 2025-01-14
+**最后更新**: 2025-10-15

@@ -91,8 +91,32 @@ function encodeCmpRegImm(lhsReg, imm) {
   return packInstruction(ISA.OPCODE.CMP, lhsReg, ISA.OPERAND.IMMEDIATE, ISA.OPERAND.UNUSED, imm);
 }
 
+function encodeCmpRegReg(lhsReg, rhsReg) {
+  return packInstruction(ISA.OPCODE.CMP, lhsReg, rhsReg, ISA.OPERAND.UNUSED, 0);
+}
+
 function encodeCjmpEq(labelName) {
   return packInstruction(ISA.OPCODE.CJMP, 0x01, ISA.OPERAND.LABEL, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeCjmpNeq(labelName) {
+  return packInstruction(ISA.OPCODE.CJMP, 0x02, ISA.OPERAND.LABEL, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeCjmpLt(labelName) {
+  return packInstruction(ISA.OPCODE.CJMP, 0x03, ISA.OPERAND.LABEL, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeCjmpLeq(labelName) {
+  return packInstruction(ISA.OPCODE.CJMP, 0x04, ISA.OPERAND.LABEL, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeCjmpGt(labelName) {
+  return packInstruction(ISA.OPCODE.CJMP, 0x05, ISA.OPERAND.LABEL, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeCjmpGeq(labelName) {
+  return packInstruction(ISA.OPCODE.CJMP, 0x06, ISA.OPERAND.LABEL, ISA.OPERAND.UNUSED, 0);
 }
 
 function encodeJmp(labelName) {
@@ -289,14 +313,74 @@ function generateIf(stmt, ctx) {
   const elseLabel = ctx.generateLabel('else');
   const endLabel = ctx.generateLabel('endif');
   
-  // Evaluate condition
-  generateExpression(stmt.condition, ctx);
-  
-  // Jump to else if condition is false
-  ctx.emitInstruction(
-    encodeCjmpEq(stmt.elseBranch ? elseLabel : endLabel),
-    `cjmp eq, ${stmt.elseBranch ? elseLabel : endLabel} ; if false`
-  );
+  // Evaluate condition and generate comparison
+  if (stmt.condition.kind === 'binary') {
+    // Get left operand register (variable or temp)
+    let leftReg;
+    if (stmt.condition.left.kind === 'variable') {
+      leftReg = ctx.getRegister(stmt.condition.left.name);
+    } else {
+      leftReg = generateExpression(stmt.condition.left, ctx);
+    }
+    
+    // Emit comparison instruction
+    if (stmt.condition.right.kind === 'literal') {
+      ctx.emitInstruction(
+        encodeCmpRegImm(leftReg, stmt.condition.right.value),
+        `cmp r${leftReg}, #${stmt.condition.right.value}`
+      );
+    } else if (stmt.condition.right.kind === 'variable') {
+      const rightReg = ctx.getRegister(stmt.condition.right.name);
+      ctx.emitInstruction(
+        encodeCmpRegReg(leftReg, rightReg),
+        `cmp r${leftReg}, r${rightReg}`
+      );
+    } else {
+      const rightReg = generateExpression(stmt.condition.right, ctx);
+      ctx.emitInstruction(
+        encodeCmpRegReg(leftReg, rightReg),
+        `cmp r${leftReg}, r${rightReg}`
+      );
+      ctx.releaseTemp(rightReg);
+    }
+    
+    // Release left temp if allocated
+    if (stmt.condition.left.kind !== 'variable') {
+      ctx.releaseTemp(leftReg);
+    }
+    
+    // Determine jump condition based on operator
+    // For 'x > 3', if condition is FALSE (x <= 3), jump to else/end
+    // CMP sets flags, we need to jump on the NEGATION of the condition
+    let jumpInstr;
+    switch (stmt.condition.operator) {
+      case '>':
+        // If NOT greater (less or equal), jump to else/end
+        jumpInstr = encodeCjmpLeq(stmt.elseBranch ? elseLabel : endLabel);
+        break;
+      case '<':
+        // If NOT less (greater or equal), jump to else/end
+        jumpInstr = encodeCjmpGeq(stmt.elseBranch ? elseLabel : endLabel);
+        break;
+      case '==':
+        // If NOT equal, jump to else/end
+        jumpInstr = encodeCjmpNeq(stmt.elseBranch ? elseLabel : endLabel);
+        break;
+      case '!=':
+        // If equal, jump to else/end
+        jumpInstr = encodeCjmpEq(stmt.elseBranch ? elseLabel : endLabel);
+        break;
+      default:
+        throw new Error(`Unsupported comparison operator: ${stmt.condition.operator}`);
+    }
+    
+    ctx.emitInstruction(
+      jumpInstr,
+      `cjmp (negated ${stmt.condition.operator}), ${stmt.elseBranch ? elseLabel : endLabel}`
+    );
+  } else {
+    throw new Error('If condition must be a comparison expression');
+  }
   
   // Generate then branch
   for (const thenStmt of stmt.thenBranch.statements) {
