@@ -21,6 +21,10 @@ const TEST_CASES = [
   { name: 'loop_sum', matchType: 'exact' },   // exact byte-for-byte match
   { name: 'conditional', matchType: 'exact' }, // if/else branching
   { name: 'conditional_no_else', matchType: 'exact' }, // if without else
+  { name: 'arithmetic_ops', matchType: 'exact' }, // mul/div/rem operations
+  { name: 'complex_expr', matchType: 'exact' }, // sub reg-reg, mul imm, >= <=
+  { name: 'bitwise_ops', matchType: 'exact' },  // AND/OR/XOR/SHL/SHR
+  { name: 'function_call', matchType: 'exact' }, // function definition and call
 ];
 
 class TestRunner {

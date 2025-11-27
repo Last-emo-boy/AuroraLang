@@ -1,0 +1,46 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: ../examples/spill_test.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0101FF0000000001  ; mov r1, #1 ; a
+bytes 0x0102FF0000000002  ; mov r2, #2 ; b
+bytes 0x0103FF0000000003  ; mov r3, #3 ; c
+bytes 0x0104FF0000000004  ; mov r4, #4 ; d
+bytes 0x0105FF0000000005  ; mov r5, #5 ; e
+bytes 0x1601FF0000000020  ; store r1 -> [RSP+32] ; spill a
+bytes 0x0101FF0000000006  ; mov r1, #6 ; f
+bytes 0x1602FF0000000028  ; store r2 -> [RSP+40] ; spill b
+bytes 0x0102FF0000000007  ; mov r2, #7 ; g
+bytes 0x1603FF0000000030  ; store r3 -> [RSP+48] ; spill c
+bytes 0x0103FF0000000008  ; mov r3, #8 ; h
+bytes 0x1604FF0000000038  ; store r4 -> [RSP+56] ; spill d
+bytes 0x1704FF0000000020  ; load r4 <- [RSP+32] ; reload a
+bytes 0x0106040000000000  ; mov r6, r4
+bytes 0x1605FF0000000040  ; store r5 -> [RSP+64] ; spill e
+bytes 0x1705FF0000000028  ; load r5 <- [RSP+40] ; reload b
+bytes 0x0406060500000000  ; add r6, r6, r5
+bytes 0x1601FF0000000048  ; store r1 -> [RSP+72] ; spill f
+bytes 0x1701FF0000000030  ; load r1 <- [RSP+48] ; reload c
+bytes 0x0406060100000000  ; add r6, r6, r1
+bytes 0x1602FF0000000050  ; store r2 -> [RSP+80] ; spill g
+bytes 0x1702FF0000000038  ; load r2 <- [RSP+56] ; reload d
+bytes 0x0406060200000000  ; add r6, r6, r2
+bytes 0x1603FF0000000058  ; store r3 -> [RSP+88] ; spill h
+bytes 0x1703FF0000000040  ; load r3 <- [RSP+64] ; reload e
+bytes 0x0406060300000000  ; add r6, r6, r3
+bytes 0x1604FF0000000020  ; store r4 -> [RSP+32] ; spill a
+bytes 0x1704FF0000000048  ; load r4 <- [RSP+72] ; reload f
+bytes 0x0406060400000000  ; add r6, r6, r4
+bytes 0x1605FF0000000028  ; store r5 -> [RSP+40] ; spill b
+bytes 0x1705FF0000000050  ; load r5 <- [RSP+80] ; reload g
+bytes 0x0406060500000000  ; add r6, r6, r5
+bytes 0x1601FF0000000030  ; store r1 -> [RSP+48] ; spill c
+bytes 0x1701FF0000000058  ; load r1 <- [RSP+88] ; reload h
+bytes 0x0406060100000000  ; add r6, r6, r1
+bytes 0x1602FF0000000038  ; store r2 -> [RSP+56] ; spill d
+bytes 0x0102060000000000  ; mov r2, r6 ; sum
+bytes 0x0100020000000000  ; mov r0, r2 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1

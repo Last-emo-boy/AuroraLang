@@ -1,0 +1,10 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/exit_test.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0100FF0000000063  ; mov r0, #99
+bytes 0x0B02000000000000  ; svc 0x02
+bytes 0x0106FF0000000000  ; mov r6, #0
+bytes 0x0100060000000000  ; mov r0, r6 ; return value
+
+label fn_main 1

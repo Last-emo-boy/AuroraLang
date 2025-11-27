@@ -1,0 +1,8 @@
+module test {
+    fn main() -> int {
+        // This will just exit with code 99
+        // to test if basic program structure works
+        request service exit(99);
+        return 0;
+    }
+}

@@ -1,0 +1,16 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/hello_world.aur
+
+bytes 0x07FE000000000000
+bytes 0x0101FE0000000000
+bytes 0x0B01010000000000
+bytes 0x0100FF0000000000
+bytes 0x0B02000000000000
+bytes 0x0106FF0000000000
+bytes 0x0100060000000000
+
+label fn_main 1
+
+label str_0 7
+string "OK
+"

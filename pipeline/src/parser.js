@@ -68,7 +68,7 @@ function parseFunctionBody(bodyStr, program) {
   const body = bodyStr.trim();
   
   // Parse let declarations
-  const letRegex = /let\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+)\s*;/g;
+  const letRegex = /let\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_<>]*)\s*=\s*([^;]+)\s*;/g;
   let match;
   
   while ((match = letRegex.exec(body)) !== null) {
@@ -78,18 +78,43 @@ function parseFunctionBody(bodyStr, program) {
     
     let value;
     if (type === 'string') {
-      const strMatch = valueStr.match(/^"([\s\S]*)"$/);
+      const strMatch = valueStr.match(/^"([\\s\\S]*)"$/);
       if (strMatch) {
         value = IR.createLiteralExpr('string', strMatch[1]);
       } else {
         throw new Error(`Invalid string literal: ${valueStr}`);
       }
     } else if (type === 'int') {
-      const intValue = Number.parseInt(valueStr, 10);
-      if (isNaN(intValue)) {
-        throw new Error(`Invalid int literal: ${valueStr}`);
+      // Check for unary negation
+      if (valueStr.startsWith('-')) {
+        const numPart = valueStr.substring(1).trim();
+        const intValue = Number.parseInt(numPart, 10);
+        if (isNaN(intValue)) {
+          // Try parsing as expression
+          value = parseExpression(valueStr, program);
+        } else {
+          value = IR.createLiteralExpr('int', -intValue);
+        }
+      } else {
+        const intValue = Number.parseInt(valueStr, 10);
+        if (isNaN(intValue)) {
+          // Try parsing as expression (e.g., function call or variable)
+          value = parseExpression(valueStr, program);
+        } else {
+          value = IR.createLiteralExpr('int', intValue);
+        }
       }
-      value = IR.createLiteralExpr('int', intValue);
+    } else if (type === 'bool') {
+      if (valueStr === 'true') {
+        value = IR.createLiteralExpr('bool', true);
+      } else if (valueStr === 'false') {
+        value = IR.createLiteralExpr('bool', false);
+      } else {
+        value = parseExpression(valueStr, program);
+      }
+    } else if (type.startsWith('array<')) {
+      // Parse array literal: [1, 2, 3]
+      value = parseArrayLiteral(valueStr, type);
     } else {
       throw new Error(`Unsupported type: ${type}`);
     }
@@ -97,8 +122,11 @@ function parseFunctionBody(bodyStr, program) {
     program.declarations.push(IR.createLetDecl(name, value));
   }
   
+  // Parse for loops: for i in 0..10 { }
+  parseForLoops(body, program);
+  
   // Parse while loops
-  const whileRegex = /while\s+([A-Za-z_][A-Za-z0-9_]*)\s*>\s*0\s*\{([^}]*)\}/g;
+  const whileRegex = /while\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*>\\s*0\\s*\\{([^}]*)\\}/g;
   while ((match = whileRegex.exec(body)) !== null) {
     const counterName = match[1];
     const loopBody = match[2];
@@ -107,14 +135,17 @@ function parseFunctionBody(bodyStr, program) {
     program.body.statements.push(whileStmt);
   }
   
+  // Parse if/else statements using smart brace matching
+  parseIfStatements(body, program);
+  
   // Parse request service calls
-  const requestRegex = /request\s+service\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*;/g;
+  const requestRegex = /request\\s+service\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(([^)]*)\\)\\s*;/g;
   while ((match = requestRegex.exec(body)) !== null) {
     const serviceName = match[1];
     const argStr = match[2].trim();
     
     let arg;
-    if (/^\d+$/.test(argStr)) {
+    if (/^\\d+$/.test(argStr)) {
       arg = IR.createLiteralExpr('int', Number.parseInt(argStr, 10));
     } else {
       // Assume it's a variable name
@@ -127,12 +158,14 @@ function parseFunctionBody(bodyStr, program) {
   }
   
   // Parse return statement
-  const returnMatch = body.match(/return\s+([^;]+)\s*;/);
+  const returnMatch = body.match(/return\\s+([^;]+)\\s*;/);
   if (returnMatch) {
     const returnStr = returnMatch[1].trim();
     let returnValue;
     
-    if (/^\d+$/.test(returnStr)) {
+    if (/^\\d+$/.test(returnStr)) {
+      returnValue = IR.createLiteralExpr('int', Number.parseInt(returnStr, 10));
+    } else if (/^-\\d+$/.test(returnStr)) {
       returnValue = IR.createLiteralExpr('int', Number.parseInt(returnStr, 10));
     } else {
       const varDecl = program.declarations.find(d => d.name === returnStr);
@@ -183,6 +216,454 @@ function parseWhileStatement(counterName, loopBodyStr, program) {
   }
   
   return whileStmt;
+}
+
+// =============================================================================
+// For Loop Parser
+// =============================================================================
+
+/**
+ * Parse for loops: for i in 0..10 { } or for i in 0..10 step 2 { }
+ */
+function parseForLoops(body, program) {
+  // Match: for <var> in <start>..<end> { ... } or for <var> in <start>..<end> step <step> { ... }
+  const forPattern = /for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(-?\d+)\.\.(-?\d+)(?:\s+step\s+(-?\d+))?\s*\{/g;
+  let match;
+  
+  while ((match = forPattern.exec(body)) !== null) {
+    const varName = match[1];
+    const startVal = Number.parseInt(match[2], 10);
+    const endVal = Number.parseInt(match[3], 10);
+    const stepVal = match[4] ? Number.parseInt(match[4], 10) : (startVal <= endVal ? 1 : -1);
+    
+    const braceStart = match.index + match[0].length - 1;
+    const braceEnd = findMatchingBrace(body, braceStart);
+    
+    if (braceEnd === -1) {
+      throw new Error('Unmatched opening brace in for loop');
+    }
+    
+    const loopBodyContent = body.slice(braceStart + 1, braceEnd).trim();
+    
+    // Allocate loop variable
+    program.declarations.push(
+      IR.createLetDecl(varName, IR.createLiteralExpr('int', startVal))
+    );
+    
+    // Build for statement
+    const forStmt = IR.createForStmt(
+      varName,
+      IR.createLiteralExpr('int', startVal),
+      IR.createLiteralExpr('int', endVal),
+      IR.createLiteralExpr('int', stepVal),
+      IR.createBlock()
+    );
+    
+    // Parse loop body
+    parseForLoopBody(loopBodyContent, forStmt.body, program);
+    
+    program.body.statements.push(forStmt);
+  }
+}
+
+/**
+ * Parse for loop body, handling break/continue
+ */
+function parseForLoopBody(content, block, program) {
+  // Check for break statement
+  if (/\bbreak\s*;/.test(content)) {
+    block.statements.push(IR.createBreakStmt());
+    // Remove break from content to avoid re-parsing
+    content = content.replace(/\bbreak\s*;/g, '');
+  }
+  
+  // Check for continue statement
+  if (/\bcontinue\s*;/.test(content)) {
+    block.statements.push(IR.createContinueStmt());
+    content = content.replace(/\bcontinue\s*;/g, '');
+  }
+  
+  // Parse remaining assignments and expressions
+  parseBlockBody(content, block, program);
+}
+
+// =============================================================================
+// Expression Parser
+// =============================================================================
+
+/**
+ * Parse an expression string into IR
+ */
+function parseExpression(exprStr, program) {
+  exprStr = exprStr.trim();
+  
+  // Check for function call: funcName(args)
+  const callMatch = exprStr.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)$/);
+  if (callMatch) {
+    const funcName = callMatch[1];
+    const argsStr = callMatch[2].trim();
+    const args = [];
+    
+    if (argsStr.length > 0) {
+      const argParts = argsStr.split(',');
+      for (const argPart of argParts) {
+        args.push(parseExpression(argPart.trim(), program));
+      }
+    }
+    
+    return IR.createCallExpr(funcName, args, 'int');
+  }
+  
+  // Check for array access: arr[index]
+  const arrayAccessMatch = exprStr.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*\[([^\]]+)\]$/);
+  if (arrayAccessMatch) {
+    const arrayName = arrayAccessMatch[1];
+    const indexStr = arrayAccessMatch[2].trim();
+    const indexExpr = parseExpression(indexStr, program);
+    return IR.createArrayAccessExpr(
+      IR.createVariableExpr(arrayName, 'array'),
+      indexExpr,
+      'int'
+    );
+  }
+  
+  // Check for unary operators: -x, !x, ~x
+  if (exprStr.startsWith('-') && !exprStr.match(/^-\d/)) {
+    const operand = parseExpression(exprStr.substring(1).trim(), program);
+    return IR.createUnaryExpr('-', operand, operand.type);
+  }
+  if (exprStr.startsWith('!')) {
+    const operand = parseExpression(exprStr.substring(1).trim(), program);
+    return IR.createUnaryExpr('!', operand, 'bool');
+  }
+  if (exprStr.startsWith('~')) {
+    const operand = parseExpression(exprStr.substring(1).trim(), program);
+    return IR.createUnaryExpr('~', operand, 'int');
+  }
+  
+  // Check for binary operators (in order of precedence, lowest first)
+  // Logical OR
+  const orParts = splitByOperator(exprStr, '||');
+  if (orParts) {
+    return IR.createBinaryExpr(
+      '||',
+      parseExpression(orParts[0], program),
+      parseExpression(orParts[1], program),
+      'bool'
+    );
+  }
+  
+  // Logical AND
+  const andParts = splitByOperator(exprStr, '&&');
+  if (andParts) {
+    return IR.createBinaryExpr(
+      '&&',
+      parseExpression(andParts[0], program),
+      parseExpression(andParts[1], program),
+      'bool'
+    );
+  }
+  
+  // Comparison operators
+  for (const op of ['==', '!=', '>=', '<=', '>', '<']) {
+    const cmpParts = splitByOperator(exprStr, op);
+    if (cmpParts) {
+      return IR.createBinaryExpr(
+        op,
+        parseExpression(cmpParts[0], program),
+        parseExpression(cmpParts[1], program),
+        'bool'
+      );
+    }
+  }
+  
+  // Arithmetic operators
+  for (const op of ['+', '-']) {
+    const arithParts = splitByOperatorRight(exprStr, op);
+    if (arithParts) {
+      return IR.createBinaryExpr(
+        op,
+        parseExpression(arithParts[0], program),
+        parseExpression(arithParts[1], program),
+        'int'
+      );
+    }
+  }
+  
+  for (const op of ['*', '/', '%']) {
+    const arithParts = splitByOperator(exprStr, op);
+    if (arithParts) {
+      return IR.createBinaryExpr(
+        op,
+        parseExpression(arithParts[0], program),
+        parseExpression(arithParts[1], program),
+        'int'
+      );
+    }
+  }
+  
+  // Bitwise operators
+  for (const op of ['&', '|', '^', '<<', '>>']) {
+    const bitParts = splitByOperator(exprStr, op);
+    if (bitParts) {
+      return IR.createBinaryExpr(
+        op,
+        parseExpression(bitParts[0], program),
+        parseExpression(bitParts[1], program),
+        'int'
+      );
+    }
+  }
+  
+  // Integer literal
+  if (/^-?\d+$/.test(exprStr)) {
+    return IR.createLiteralExpr('int', Number.parseInt(exprStr, 10));
+  }
+  
+  // Boolean literal
+  if (exprStr === 'true') {
+    return IR.createLiteralExpr('bool', true);
+  }
+  if (exprStr === 'false') {
+    return IR.createLiteralExpr('bool', false);
+  }
+  
+  // Variable reference
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(exprStr)) {
+    const varDecl = program.declarations.find(d => d.name === exprStr);
+    const varType = varDecl ? varDecl.value.type : 'int';
+    return IR.createVariableExpr(exprStr, varType);
+  }
+  
+  throw new Error(`Cannot parse expression: ${exprStr}`);
+}
+
+/**
+ * Split expression by operator, respecting parentheses
+ */
+function splitByOperator(str, op) {
+  let depth = 0;
+  for (let i = 0; i <= str.length - op.length; i++) {
+    if (str[i] === '(') depth++;
+    else if (str[i] === ')') depth--;
+    else if (depth === 0 && str.substring(i, i + op.length) === op) {
+      // Avoid splitting on operators that are part of longer operators
+      if (op === '>' && (str[i+1] === '=' || str[i+1] === '>')) continue;
+      if (op === '<' && (str[i+1] === '=' || str[i+1] === '<')) continue;
+      if (op === '=' && str[i+1] === '=') continue;
+      if (op === '!' && str[i+1] === '=') continue;
+      if (op === '&' && str[i+1] === '&') continue;
+      if (op === '|' && str[i+1] === '|') continue;
+      
+      return [str.substring(0, i).trim(), str.substring(i + op.length).trim()];
+    }
+  }
+  return null;
+}
+
+/**
+ * Split expression by operator from right side (for left-associative ops like + and -)
+ */
+function splitByOperatorRight(str, op) {
+  let depth = 0;
+  for (let i = str.length - 1; i >= 0; i--) {
+    if (str[i] === ')') depth++;
+    else if (str[i] === '(') depth--;
+    else if (depth === 0 && str.substring(i, i + op.length) === op) {
+      // Check it's not a unary minus at the start
+      if (op === '-' && i === 0) continue;
+      // Check it's not after another operator
+      if (op === '-' && i > 0 && '+-*/%<>=!&|^'.includes(str[i-1])) continue;
+      
+      return [str.substring(0, i).trim(), str.substring(i + op.length).trim()];
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse array literal: [1, 2, 3]
+ */
+function parseArrayLiteral(valueStr, type) {
+  const match = valueStr.match(/^\[([^\]]*)\]$/);
+  if (!match) {
+    throw new Error(`Invalid array literal: ${valueStr}`);
+  }
+  
+  const elementsStr = match[1].trim();
+  const elements = [];
+  
+  if (elementsStr.length > 0) {
+    const parts = elementsStr.split(',');
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (/^-?\d+$/.test(trimmed)) {
+        elements.push(IR.createLiteralExpr('int', Number.parseInt(trimmed, 10)));
+      } else {
+        throw new Error(`Unsupported array element: ${trimmed}`);
+      }
+    }
+  }
+  
+  // Extract element type from array<int>
+  const elemTypeMatch = type.match(/^array<(\w+)>$/);
+  const elemType = elemTypeMatch ? elemTypeMatch[1] : 'int';
+  
+  return IR.createArrayLiteralExpr(elements, elemType);
+}
+
+// =============================================================================
+// If Statement Parser with Smart Brace Matching
+// =============================================================================
+
+/**
+ * Find the matching closing brace for an opening brace
+ * @param {string} str - The string to search in
+ * @param {number} startIndex - Index of the opening brace
+ * @returns {number} Index of the matching closing brace, or -1 if not found
+ */
+function findMatchingBrace(str, startIndex) {
+  let depth = 1;
+  for (let i = startIndex + 1; i < str.length; i++) {
+    if (str[i] === '{') depth++;
+    else if (str[i] === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Parse if/else statements from function body using smart brace matching
+ * @param {string} body - The function body string
+ * @param {Object} program - The IR program to add statements to
+ */
+function parseIfStatements(body, program) {
+  // Find all 'if' keywords and parse them
+  const ifPattern = /if\s+([A-Za-z_][A-Za-z0-9_]*)\s*([><=!]+)\s*(\d+)\s*\{/g;
+  let match;
+  
+  while ((match = ifPattern.exec(body)) !== null) {
+    const varName = match[1];
+    const operator = match[2];
+    const compareValue = Number.parseInt(match[3], 10);
+    const thenBraceStart = match.index + match[0].length - 1;
+    
+    // Find matching closing brace for then block
+    const thenBraceEnd = findMatchingBrace(body, thenBraceStart);
+    if (thenBraceEnd === -1) {
+      throw new Error('Unmatched opening brace in if statement');
+    }
+    
+    // Extract then block content
+    const thenContent = body.slice(thenBraceStart + 1, thenBraceEnd).trim();
+    
+    // Check for else block
+    const afterThen = body.slice(thenBraceEnd + 1).trimStart();
+    let elseContent = null;
+    
+    if (afterThen.startsWith('else')) {
+      const elseMatch = afterThen.match(/^else\s*\{/);
+      if (elseMatch) {
+        const elseStartInAfterThen = elseMatch[0].length - 1;
+        const elseBraceEnd = findMatchingBrace(afterThen, elseStartInAfterThen);
+        if (elseBraceEnd === -1) {
+          throw new Error('Unmatched opening brace in else block');
+        }
+        elseContent = afterThen.slice(elseStartInAfterThen + 1, elseBraceEnd).trim();
+      }
+    }
+    
+    // Build condition expression
+    const condition = IR.createBinaryExpr(
+      operator,
+      IR.createVariableExpr(varName, 'int'),
+      IR.createLiteralExpr('int', compareValue),
+      'bool'
+    );
+    
+    // Build then branch
+    const thenBranch = IR.createBlock();
+    parseBlockBody(thenContent, thenBranch, program);
+    
+    // Build else branch (if present)
+    let elseBranch = null;
+    if (elseContent !== null) {
+      elseBranch = IR.createBlock();
+      parseBlockBody(elseContent, elseBranch, program);
+    }
+    
+    // Create if statement and add to program
+    const ifStmt = IR.createIfStmt(condition, thenBranch, elseBranch);
+    program.body.statements.push(ifStmt);
+  }
+}
+
+/**
+ * Parse statements inside a block (then/else branch)
+ * @param {string} content - The block content
+ * @param {Object} block - The IR block to add statements to
+ * @param {Object} program - The parent program (for variable lookup)
+ */
+function parseBlockBody(content, block, program) {
+  // First try to parse arithmetic assignments: var = var op value;
+  // These are more specific and should be matched first
+  const arithAssignRegex = /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*([+\-*\/])\s*(\d+|[A-Za-z_][A-Za-z0-9_]*)\s*;/g;
+  let match;
+  const processedMatches = new Set();
+  
+  while ((match = arithAssignRegex.exec(content)) !== null) {
+    const fullMatch = match[0];
+    const target = match[1];
+    const left = match[2];
+    const operator = match[3];
+    const right = match[4];
+    
+    // Record this match to avoid re-processing as simple assignment
+    processedMatches.add(match.index);
+    
+    let rightExpr;
+    if (/^\d+$/.test(right)) {
+      rightExpr = IR.createLiteralExpr('int', Number.parseInt(right, 10));
+    } else {
+      rightExpr = IR.createVariableExpr(right, 'int');
+    }
+    
+    const binaryExpr = IR.createBinaryExpr(
+      operator,
+      IR.createVariableExpr(left, 'int'),
+      rightExpr,
+      'int'
+    );
+    
+    block.statements.push(IR.createAssignStmt(target, binaryExpr));
+  }
+  
+  // Then parse simple assignments: var = literal;
+  // But only if they weren't already matched as arithmetic assignments
+  const simpleAssignRegex = /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*;/g;
+  
+  while ((match = simpleAssignRegex.exec(content)) !== null) {
+    // Skip if this was already processed as arithmetic assignment
+    // Check by looking at the match index
+    let wasProcessed = false;
+    for (const idx of processedMatches) {
+      // If the simple match starts within an arithmetic match, skip it
+      if (Math.abs(match.index - idx) < 5) {
+        wasProcessed = true;
+        break;
+      }
+    }
+    if (wasProcessed) continue;
+    
+    const target = match[1];
+    const value = Number.parseInt(match[2], 10);
+    
+    block.statements.push(
+      IR.createAssignStmt(target, IR.createLiteralExpr('int', value))
+    );
+  }
 }
 
 // =============================================================================

@@ -1,0 +1,22 @@
+module demo {
+    fn main() -> int {
+        let a: int = 6;
+        let b: int = 4;
+        let result: int = 0;
+        
+        // Test multiplication: 6 * 4 = 24
+        result = a * b;
+        
+        // Test division: 24 / 4 = 6
+        result = result / b;
+        
+        // Test remainder: 6 % 4 = 2
+        result = result % b;
+        
+        // Test addition with immediate: 2 + 8 = 10
+        result = result + 8;
+        
+        request service exit(result);
+        return result;
+    }
+}

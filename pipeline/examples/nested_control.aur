@@ -1,0 +1,16 @@
+module demo {
+    fn main() -> int {
+        let i: int = 3;
+        let sum: int = 0;
+        
+        while i > 0 {
+            if i > 1 {
+                sum = sum + i;
+            }
+            i = i - 1;
+        }
+        
+        request service exit(sum);
+        return sum;
+    }
+}

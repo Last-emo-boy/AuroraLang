@@ -1,0 +1,27 @@
+// Stress test for register spilling with 15 variables
+// Expected result: 1+2+3+...+15 = 120
+
+module test {
+    fn main() -> int {
+        let a: int = 1;
+        let b: int = 2;
+        let c: int = 3;
+        let d: int = 4;
+        let e: int = 5;
+        let f: int = 6;
+        let g: int = 7;
+        let h: int = 8;
+        let i: int = 9;
+        let j: int = 10;
+        let k: int = 11;
+        let l: int = 12;
+        let m: int = 13;
+        let n: int = 14;
+        let o: int = 15;
+        
+        // Use all 15 variables in a computation
+        let sum: int = a + b + c + d + e + f + g + h + i + j + k + l + m + n + o;
+        
+        return sum;
+    }
+}

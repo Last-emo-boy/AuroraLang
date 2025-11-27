@@ -147,6 +147,76 @@ function createReturnStmt(value) {
   };
 }
 
+function createForStmt(varName, start, end, step, body) {
+  return {
+    kind: 'for',
+    varName,
+    start,    // IRExpression for start value
+    end,      // IRExpression for end value (exclusive)
+    step,     // IRExpression for step (usually 1 or -1)
+    body,     // IRBlock
+  };
+}
+
+function createBreakStmt() {
+  return {
+    kind: 'break',
+  };
+}
+
+function createContinueStmt() {
+  return {
+    kind: 'continue',
+  };
+}
+
+function createUnaryExpr(operator, operand, type) {
+  return {
+    kind: 'unary',
+    type,
+    operator, // '-', '!', '~'
+    operand,
+  };
+}
+
+function createArrayLiteralExpr(elements, elementType) {
+  return {
+    kind: 'array_literal',
+    type: `array<${elementType}>`,
+    elementType,
+    elements, // Array of IRExpression
+  };
+}
+
+function createArrayAccessExpr(array, index, elementType) {
+  return {
+    kind: 'array_access',
+    type: elementType,
+    array,    // IRExpression (variable or array literal)
+    index,    // IRExpression (int)
+  };
+}
+
+function createCallExpr(functionName, args, returnType = 'int') {
+  return {
+    kind: 'call',
+    type: returnType,
+    functionName,
+    args,
+  };
+}
+
+function createFunctionDecl(name, params, returnType, body, localDecls = []) {
+  return {
+    kind: 'fn',
+    name,
+    params,      // Array of { name, type }
+    returnType,
+    body,        // IRBlock
+    localDecls,  // Local variable declarations within the function
+  };
+}
+
 // =============================================================================
 // IR Utilities
 // =============================================================================
@@ -177,6 +247,12 @@ function walkStatement(stmt, visitor) {
       walkExpression(stmt.condition, visitor);
       walkBlock(stmt.body, visitor);
       break;
+    case 'for':
+      walkExpression(stmt.start, visitor);
+      walkExpression(stmt.end, visitor);
+      if (stmt.step) walkExpression(stmt.step, visitor);
+      walkBlock(stmt.body, visitor);
+      break;
     case 'if':
       walkExpression(stmt.condition, visitor);
       walkBlock(stmt.thenBranch, visitor);
@@ -191,6 +267,10 @@ function walkStatement(stmt, visitor) {
     case 'return':
       if (stmt.value) walkExpression(stmt.value, visitor);
       break;
+    case 'break':
+    case 'continue':
+      // No children to walk
+      break;
   }
 }
 
@@ -204,6 +284,16 @@ function walkExpression(expr, visitor) {
       break;
     case 'unary':
       walkExpression(expr.operand, visitor);
+      break;
+    case 'array_literal':
+      expr.elements.forEach(elem => walkExpression(elem, visitor));
+      break;
+    case 'array_access':
+      walkExpression(expr.array, visitor);
+      walkExpression(expr.index, visitor);
+      break;
+    case 'call':
+      expr.args.forEach(arg => walkExpression(arg, visitor));
       break;
   }
 }
@@ -244,11 +334,19 @@ module.exports = {
   createLiteralExpr,
   createVariableExpr,
   createBinaryExpr,
+  createUnaryExpr,
   createAssignStmt,
   createWhileStmt,
+  createForStmt,
   createIfStmt,
   createRequestStmt,
   createReturnStmt,
+  createBreakStmt,
+  createContinueStmt,
+  createCallExpr,
+  createFunctionDecl,
+  createArrayLiteralExpr,
+  createArrayAccessExpr,
   
   // Utilities
   walkProgram,

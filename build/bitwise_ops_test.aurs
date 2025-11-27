@@ -1,0 +1,28 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: C:\Users\w33d\Documents\GitHub\AuroraLang\pipeline\examples\bitwise_ops.aur
+
+bytes 0x0101FF000000000C  ; mov r1, #12 ; a
+bytes 0x0102FF000000000A  ; mov r2, #10 ; b
+bytes 0x0103FF0000000000  ; mov r3, #0 ; result
+bytes 0x0103010000000000  ; mov r3, r1
+bytes 0x1003030200000000  ; and r3, r3, r2
+bytes 0x0100030000000000  ; mov r0, r3
+bytes 0x0B01010000000000  ; svc 0x01
+bytes 0x0103010000000000  ; mov r3, r1
+bytes 0x1103030200000000  ; or r3, r3, r2
+bytes 0x0100030000000000  ; mov r0, r3
+bytes 0x0B01010000000000  ; svc 0x01
+bytes 0x0103010000000000  ; mov r3, r1
+bytes 0x1203030200000000  ; xor r3, r3, r2
+bytes 0x0100030000000000  ; mov r0, r3
+bytes 0x0B01010000000000  ; svc 0x01
+bytes 0x0103FF0000000003  ; mov r3, #3
+bytes 0x140303FF00000002  ; shl r3, r3, #2
+bytes 0x0100030000000000  ; mov r0, r3
+bytes 0x0B01010000000000  ; svc 0x01
+bytes 0x0103FF0000000010  ; mov r3, #16
+bytes 0x150303FF00000002  ; shr r3, r3, #2
+bytes 0x0100030000000000  ; mov r0, r3
+bytes 0x0B01010000000000  ; svc 0x01
+bytes 0x0100FF0000000000  ; mov r0, #0
+bytes 0x0B02000000000000  ; svc 0x02

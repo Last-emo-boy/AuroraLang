@@ -1,0 +1,28 @@
+// Bitwise operations test
+// Tests AND, OR, XOR, and shift operators
+
+let a: int = 12;       // 0b1100
+let b: int = 10;       // 0b1010
+let result: int = 0;
+
+// AND: 12 & 10 = 8 (0b1000)
+result = a & b;
+request service print(result);
+
+// OR: 12 | 10 = 14 (0b1110)
+result = a | b;
+request service print(result);
+
+// XOR: 12 ^ 10 = 6 (0b0110)
+result = a ^ b;
+request service print(result);
+
+// Left shift: 3 << 2 = 12
+result = 3 << 2;
+request service print(result);
+
+// Right shift: 16 >> 2 = 4
+result = 16 >> 2;
+request service print(result);
+
+request service exit(0);

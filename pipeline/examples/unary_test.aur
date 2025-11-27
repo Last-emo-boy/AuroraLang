@@ -1,0 +1,12 @@
+// Test unary operators: ! (logical not) and - (negation)
+module main {
+    fn main() -> int {
+        let a: int = 5;
+        let b: int = 0 - 3;  // b = -3
+        
+        // Test negation: -3 + 5 = 2
+        let result: int = a + b;
+        
+        return result;
+    }
+}

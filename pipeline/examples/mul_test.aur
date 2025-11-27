@@ -1,0 +1,11 @@
+// Simple multiplication test
+// Expected: 6 * 4 = 24
+
+module test {
+    fn main() -> int {
+        let a: int = 6;
+        let b: int = 4;
+        let result: int = a * b;
+        return result;
+    }
+}

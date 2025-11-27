@@ -1,10 +1,16 @@
-# Aurora minimal ISA manifest (expected output)
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: ../examples/conditional_no_else.aur
 
-bytes 0x0101FF0000000007
-bytes 0x0601FF0000000005
-bytes 0x0804FE0000000000
-bytes 0x050101FF00000002
-bytes 0x0100010000000000
-bytes 0x0B02000000000000
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0101FF0000000007  ; mov r1, #7 ; counter
+bytes 0x0601FF0000000005  ; cmp r1, #5
+bytes 0x0804FE0000000000  ; cjmp (negated >), endif_1
+bytes 0x050101FF00000002  ; sub r1, r1, #2
+bytes 0x0100010000000000  ; mov r0, r1
+bytes 0x0B02000000000000  ; svc 0x02
+bytes 0x0100010000000000  ; mov r0, r1 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
 
-label endif_1 4
+label fn_main 1
+label endif_1 5

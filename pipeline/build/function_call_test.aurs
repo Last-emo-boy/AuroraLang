@@ -1,0 +1,20 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/function_call.aur
+
+bytes 0x07FE000000000000
+bytes 0x0403010200000000
+bytes 0x0100030000000000
+bytes 0x0A00000000000000
+bytes 0x0101FF0000000003
+bytes 0x0102FF0000000005
+bytes 0x09FE000000000000
+bytes 0x0103000000000000
+bytes 0x0100030000000000
+bytes 0x0B01010000000000
+bytes 0x0100FF0000000000
+bytes 0x0B02000000000000
+bytes 0x0106FF0000000000
+bytes 0x0100060000000000
+
+label fn_add 1
+label fn_main 4

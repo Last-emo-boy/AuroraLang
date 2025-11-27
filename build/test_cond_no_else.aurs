@@ -1,0 +1,10 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: pipeline/examples/conditional_no_else.aur
+
+bytes 0x0101FF0000000007
+bytes 0x0601FF0000000005
+bytes 0x0804FE0000000000
+bytes 0x0100010000000000
+bytes 0x0B02000000000000
+
+label endif_1 3

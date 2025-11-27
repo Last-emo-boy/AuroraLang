@@ -1,0 +1,11 @@
+// Test for loop with step
+// Calculate sum of 0, 2, 4 = 6
+module main {
+    fn main() -> int {
+        let sum: int = 0;
+        for i in 0..6 step 2 {
+            sum = sum + i;
+        }
+        return sum;
+    }
+}

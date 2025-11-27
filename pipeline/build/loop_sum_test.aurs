@@ -1,0 +1,18 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/loop_sum.aur
+
+bytes 0x07FE000000000000
+bytes 0x0101FF0000000000
+bytes 0x0102FF0000000004
+bytes 0x0401010200000000
+bytes 0x050202FF00000001
+bytes 0x0602FF0000000000
+bytes 0x0801FE0000000000
+bytes 0x07FE000000000000
+bytes 0x0100010000000000
+bytes 0x0B02000000000000
+bytes 0x0100010000000000
+
+label fn_main 1
+label loop_0 3
+label exit_1 8

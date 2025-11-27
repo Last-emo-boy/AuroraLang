@@ -1,0 +1,22 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/complex_expr.aur
+
+bytes 0x07FE000000000000
+bytes 0x0101FF000000000A
+bytes 0x0102FF0000000003
+bytes 0x0103FF0000000000
+bytes 0x0503010200000000
+bytes 0x0D0303FF00000002
+bytes 0x0603FF000000000A
+bytes 0x0803FE0000000000
+bytes 0x040303FF00000001
+bytes 0x0603FF0000000014
+bytes 0x0805FE0000000000
+bytes 0x050303FF00000001
+bytes 0x0100030000000000
+bytes 0x0B02000000000000
+bytes 0x0100030000000000
+
+label fn_main 1
+label endif_1 9
+label endif_3 12

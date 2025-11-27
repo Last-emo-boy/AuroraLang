@@ -1,0 +1,11 @@
+// Test for loop syntax
+// Calculate sum of 0..5 = 0+1+2+3+4 = 10
+module main {
+    fn main() -> int {
+        let sum: int = 0;
+        for i in 0..5 {
+            sum = sum + i;
+        }
+        return sum;
+    }
+}

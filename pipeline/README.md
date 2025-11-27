@@ -1,6 +1,6 @@
 # Aurora Pipeline Compiler - Stage N1 Complete ✅
 
-**JavaScript 原型编译器，支持 Aurora 语言子集到 Minimal ISA manifest 的转换**
+**JavaScript 原型编译器，支持 Aurora 语言子集到原生 x86-64 ELF64 可执行文件的转换**
 
 ## 🎯 功能特性
 
@@ -9,23 +9,27 @@
 **语法支持**：
 - ✅ `module { fn main() -> int { ... } }` 结构
 - ✅ `let <name>: <type> = <value>;` 变量声明（int/string）
-- ✅ `if <condition> { ... } else { ... }` 条件分支（支持 >, <, ==, !=）
+- ✅ `if <condition> { ... } else { ... }` 条件分支（支持 >, <, >=, <=, ==, !=）
 - ✅ `while <var> > 0 { ... }` 后置判断循环
-- ✅ 算术运算（`+`, `-`, 带立即数或寄存器）
+- ✅ 算术运算（`+`, `-`, `*`, `/`, `%`）
+- ✅ 位运算（`&`, `|`, `^`, `<<`, `>>`）
+- ✅ 函数定义与调用（参数传递、返回值）
 - ✅ `request service print/exit` 系统调用
 - ✅ `return <value>;` 返回语句
 
 **编译器架构**：
-- ✅ 模块化设计：Parser → IR → CodeGen → Manifest
+- ✅ 模块化设计：Parser → IR → CodeGen → Manifest → Native
 - ✅ 智能寄存器分配器（变量池 + 临时池）
 - ✅ IR 验证（未定义变量检测）
 - ✅ 自动化测试套件（回归测试）
+- ✅ **原生 x86-64 代码生成**
+- ✅ **ELF64 可执行文件生成**
 
 **指令生成**：
-- ✅ 8 种 ISA 指令：MOV/ADD/SUB/CMP/JMP/CJMP/SVC/HALT
+- ✅ 22 种 ISA 指令：MOV/ADD/SUB/MUL/DIV/REM/CMP/JMP/CJMP/CALL/RET/SVC/HALT/AND/OR/XOR/NOT/SHL/SHR
 - ✅ 优化的循环（后置判断，减少跳转）
 - ✅ 直接寄存器操作（避免临时变量）
-- ✅ 字节完美匹配 legacy 输出
+- ✅ 字节完美匹配预期输出
 
 ## 📂 项目结构
 
@@ -33,42 +37,53 @@
 pipeline/
 ├── src/
 │   ├── pipeline_driver.js      # 主驱动（CLI 入口）
-│   ├── parser.js                # 源码解析器
-│   ├── ir.js                    # IR 定义与工具
-│   ├── codegen.js               # 代码生成器
+│   ├── lexer.js                # 词法分析器
+│   ├── parser_v2.js            # 递归下降解析器
+│   ├── ir.js                   # IR 定义与工具
+│   ├── codegen.js              # 代码生成器
 │   ├── register_allocator.js   # 寄存器分配器
-│   └── test_runner.js           # 自动化测试
+│   ├── test_runner.js          # 自动化测试
+│   └── backend/                # 原生代码后端
+│       ├── x86_encoder.js      # x86-64 指令编码器
+│       ├── elf64_generator.js  # ELF64 文件生成器
+│       └── native_compiler.js  # Manifest → Native 编译器
 ├── examples/
-│   ├── hello_world.aur          # 字符串打印示例
-│   ├── hello_world_expected.aurs
-│   ├── loop_sum.aur             # 算术循环示例
-│   ├── loop_sum_expected.aurs
-│   ├── conditional.aur          # if/else 条件分支
-│   ├── conditional_expected.aurs
-│   ├── conditional_no_else.aur  # 无 else 的条件
-│   └── conditional_no_else_expected.aurs
+│   ├── hello_world.aur
+│   ├── loop_sum.aur
+│   ├── conditional.aur
+│   ├── function_call.aur
+│   ├── bitwise_ops.aur
+│   └── *_expected.aurs
+├── build/
+│   └── *.elf                   # 生成的原生可执行文件
 └── docs/
-    ├── iteration_log.md         # 开发日志
-    ├── self_hosting_roadmap.md  # 自举路线图
-    ├── c_vs_js_strategy.md      # 技术选型说明
-    └── usage.md                 # 使用指南
+    ├── iteration_log.md
+    ├── self_hosting_roadmap.md
+    └── usage.md
 ```
 
 ## 🚀 快速开始
 
-### 编译单个文件
+### 编译到原生可执行文件 (Linux x86-64)
 
 ```powershell
-node pipeline/src/pipeline_driver.js compile <input.aur> -o <output.aurs>
+node pipeline/src/pipeline_driver.js native <input.aur> -o <output.elf>
 ```
 
 **示例**：
 ```powershell
-# 编译 hello_world
-node pipeline/src/pipeline_driver.js compile pipeline/examples/hello_world.aur -o build/hello.aurs
+# 编译 hello_world 到原生 ELF
+node pipeline/src/pipeline_driver.js native pipeline/examples/hello_world.aur -o build/hello_world.elf
 
-# 编译 loop_sum
-node pipeline/src/pipeline_driver.js compile pipeline/examples/loop_sum.aur -o build/loop.aurs
+# 在 Linux/WSL 上运行
+./build/hello_world.elf
+# 输出: OK
+```
+
+### 编译到 Manifest（中间格式）
+
+```powershell
+node pipeline/src/pipeline_driver.js compile <input.aur> -o <output.aurs>
 ```
 
 ### 运行测试套件
@@ -81,19 +96,16 @@ node pipeline/src/test_runner.js
 ```
 🧪 Aurora Pipeline Test Suite
 
-▶ Running test: hello_world
-  ✅ PASS (4 instructions)
+▶ Running test: hello_world        ✅ PASS (7 instructions)
+▶ Running test: loop_sum           ✅ PASS (11 instructions)
+▶ Running test: conditional        ✅ PASS (13 instructions)
+▶ Running test: conditional_no_else ✅ PASS (8 instructions)
+▶ Running test: arithmetic_ops     ✅ PASS (11 instructions)
+▶ Running test: complex_expr       ✅ PASS (15 instructions)
+▶ Running test: bitwise_ops        ✅ PASS (22 instructions)
+▶ Running test: function_call      ✅ PASS (14 instructions)
 
-▶ Running test: loop_sum
-  ✅ PASS (9 instructions)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📊 Test Summary:
-   Total:  4
-   Passed: 4 ✅
-   Failed: 0 ❌
-
+📊 Total: 8 | Passed: 8 ✅ | Failed: 0 ❌
 🎉 All tests passed!
 ```
 
@@ -196,16 +208,16 @@ node pipeline/src/pipeline_driver.js compile <input.aur> -o <output.aurs>
 
 ## 🧪 测试覆盖
 
-| 测试用例 | 指令数 | 匹配模式 | 状态 |
-|---------|-------|---------|-----|
-| hello_world | 4 | 集合匹配 | ✅ PASS |
-| loop_sum | 9 | 完全匹配 | ✅ PASS |
-| conditional | 11 | 完全匹配 | ✅ PASS |
-| conditional_no_else | 6 | 完全匹配 | ✅ PASS |
-
-**匹配模式说明**：
-- **完全匹配**：指令字节顺序和内容完全一致
-- **集合匹配**：指令集合相同，顺序可能不同（语义等价）
+| 测试用例 | 指令数 | 功能 | 状态 |
+|---------|-------|------|-----|
+| hello_world | 7 | 字符串打印 | ✅ PASS |
+| loop_sum | 11 | 算术循环 | ✅ PASS |
+| conditional | 13 | if/else 分支 | ✅ PASS |
+| conditional_no_else | 8 | 无 else 条件 | ✅ PASS |
+| arithmetic_ops | 11 | 乘除模运算 | ✅ PASS |
+| complex_expr | 15 | 复杂表达式 | ✅ PASS |
+| bitwise_ops | 22 | 位运算 | ✅ PASS |
+| function_call | 14 | 函数调用 | ✅ PASS |
 
 ## 📊 架构设计
 
@@ -214,26 +226,45 @@ node pipeline/src/pipeline_driver.js compile <input.aur> -o <output.aurs>
 ```
 Source (.aur)
     ↓
-Parser (parser.js)
+Lexer (lexer.js) → Tokens
     ↓
-IR (ir.js)
+Parser (parser_v2.js) → AST/IR
     ↓
-IR Validation
+IR Validation (ir.js)
     ↓
 CodeGen (codegen.js)
     ├─ Register Allocator (register_allocator.js)
     └─ Instruction Encoders
     ↓
 Manifest (.aurs)
+    ↓
+Native Compiler (backend/)
+    ├─ x86_encoder.js
+    ├─ elf64_generator.js
+    └─ native_compiler.js
+    ↓
+ELF64 Executable
 ```
 
-### 寄存器分配策略
+### x86-64 寄存器映射
 
-| 寄存器 | 用途 | 管理方式 |
-|-------|------|---------|
-| r0 | 返回值/服务参数 | 保留 |
-| r1-r5 | 变量存储 | 顺序分配 |
-| r6-r7 | 临时值 | 池管理 |
+| Aurora | x86-64 | 用途 |
+|--------|--------|------|
+| r0 | rax | 返回值/系统调用号 |
+| r1 | rdi | 第1参数 |
+| r2 | rsi | 第2参数 |
+| r3 | rdx | 第3参数 |
+| r4 | rcx | 第4参数 |
+| r5 | r8 | 第5参数 |
+| r6 | r9 | 临时 |
+| r7 | r10 | 临时 |
+
+### Linux 系统调用映射
+
+| Aurora SVC | Linux syscall | 功能 |
+|------------|---------------|------|
+| SVC 0x01 | write (1) | 打印到 stdout |
+| SVC 0x02 | exit (60) | 退出程序 |
 
 ### IR 数据结构
 
@@ -262,10 +293,11 @@ Manifest (.aurs)
 ## 🛣️ 自举路线图
 
 ### Stage N1（当前）✅
-**JavaScript 原型验证**
-- ✅ 完整的 Parser → IR → CodeGen 流水线
-- ✅ 字节完美的 manifest 生成
+**JavaScript 原型 + 原生代码生成**
+- ✅ 完整的 Parser → IR → CodeGen → Native 流水线
+- ✅ x86-64 ELF64 可执行文件生成
 - ✅ 自动化测试基础设施
+- ✅ 8 个测试用例全部通过
 
 ### Stage N2（下一步）
 **Aurora 重写**
@@ -274,10 +306,10 @@ Manifest (.aurs)
 - 验证：Aurora 实现与 JS 原型输出一致
 
 ### Stage N3
-**原生二进制生成**
-- Aurora 编译器输出原生机器码（x86-64/ARM64）
-- 实现链接器或集成现有工具
-- minimal libc runtime
+**原生编译器**
+- Aurora 编译器编译自身为原生二进制
+- 消除 JS 依赖
+- 完整工具链（编译器 + 链接器）
 
 ### Stage N4
 **完全自举**
@@ -287,33 +319,20 @@ Manifest (.aurs)
 
 ## 📝 已知限制
 
-1. **语法覆盖**：仅支持基础子集（无函数定义、数组、嵌套条件）
+1. **目标平台**：仅支持 Linux x86-64（ELF64）
 2. **寄存器溢出**：超过 5 个变量会抛出错误（未实现 spilling）
-3. **类型系统**：基础类型检查，无泛型/联合类型
-4. **优化**：基础优化（后置循环、直接寄存器操作），无死代码消除/常量折叠
-5. **错误恢复**：解析错误立即失败，无错误恢复
+3. **DIV/REM**：除法和取模在原生代码中生成 NOP 占位符
+4. **字符串长度**：打印字符串时需要硬编码长度
+5. **优化**：无死代码消除/常量折叠
 
 ## 📚 相关文档
 
 - [完整迭代日志](docs/iteration_log.md)
 - [自举路线图](docs/self_hosting_roadmap.md)
-- [C vs JS 策略说明](docs/c_vs_js_strategy.md)
 - [使用指南](docs/usage.md)
-
-## 🤝 贡献指南
-
-本项目当前处于快速迭代期，暂不接受外部贡献。
-
-开发路线图优先级：
-1. ✅ 基础语法支持（let/while/request）
-2. ✅ 寄存器分配器
-3. ✅ 自动化测试
-4. ✅ 条件分支（if/else）
-5. ⏳ 函数定义与调用
-6. ⏳ Stage N2 迁移（Aurora 重写）
 
 ---
 
-**版本**: Stage N1 Iteration 5  
-**状态**: ✅ 生产就绪（用于原型验证）  
-**最后更新**: 2025-10-15
+**版本**: Stage N1 Iteration 11  
+**状态**: ✅ 生产就绪（原生代码生成）  
+**最后更新**: 2025-11-27

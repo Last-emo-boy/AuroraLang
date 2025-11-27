@@ -1,0 +1,17 @@
+// Test register spilling with 8 variables (more than 6 registers)
+module test {
+    fn main() -> int {
+        let a: int = 1;
+        let b: int = 2;
+        let c: int = 3;
+        let d: int = 4;
+        let e: int = 5;
+        let f: int = 6;
+        let g: int = 7;
+        let h: int = 8;
+        
+        // Calculate sum: 1+2+3+4+5+6+7+8 = 36
+        let sum: int = a + b + c + d + e + f + g + h;
+        return sum;
+    }
+}

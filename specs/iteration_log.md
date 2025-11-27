@@ -268,3 +268,20 @@
   1. Flesh out encoding diagrams and helper references within `aurseed_linux.asmplan` to reflect the minimal ISA blocks.
   2. Prototype the S0/S1 translators (CNL → SIG → `.aur`) using the narrowed grammar and tie them to the new ISA opcodes.
   3. Stand up regression cases (manifest + binary) that exercise each minimal ISA instruction via the interpreter harness.
+
+## 2025-10-13 — Iteration 29: Windows PE64 Native Compiler
+- Implemented Windows PE64 executable generation in `pipeline/src/backend/pe64_generator.js`, supporting proper DOS/PE headers, COFF, Optional Header (PE32+), and section layout (.text, .rdata, .data).
+- Created `pipeline/src/backend/x86_encoder_win64.js` for x86-64 instruction encoding with Windows x64 calling convention (RCX, RDX, R8, R9 for args, shadow space).
+- Authored `pipeline/src/backend/native_compiler_win.js` to compile Aurora manifests to Windows native code using kernel32.dll imports (ExitProcess, GetStdHandle, WriteFile).
+- Integrated `native-win` command in `pipeline/src/pipeline_driver.js` for end-to-end Aurora-to-Windows compilation.
+- **Key debugging breakthrough**: Identified ASLR (Address Space Layout Randomization) as the cause of print syscall failures—absolute addresses in `mov imm64` instructions don't get relocated when Windows loads the image at a different base address. Fixed by disabling DYNAMIC_BASE flag in PE DllCharacteristics.
+- Successfully tested all example programs:
+  - `hello_world.exe`: Outputs "Hello, World!" ✓
+  - `loop_sum.exe`: Exit code 10 (1+2+3+4) ✓
+  - `conditional.exe`: Exit code 10 ✓
+  - `conditional_no_else.exe`: Exit code 5 ✓
+  - `minimal_exit.exe`: Exit code 42 ✓
+- Next steps:
+  1. Consider adding base relocation support for ASLR-compatible executables (optional, lower priority).
+  2. Extend PE generation to support additional kernel32/user32 imports for future features.
+  3. Add Windows-specific test cases to the automated test runner.

@@ -1,0 +1,20 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples\for_loop.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0101FF0000000000  ; mov r1, #0 ; sum
+bytes 0x0102FF0000000000  ; mov r2, #0 ; i
+bytes 0x0102FF0000000000  ; mov r2, #0 ; i = start
+bytes 0x0602FF0000000005  ; cmp r2, #5 ; compare with end
+bytes 0x0806FE0000000000  ; cjmp geq, for_exit_1 ; exit if i >= end
+bytes 0x0401010200000000  ; add r1, r1, r2
+bytes 0x040202FF00000001  ; add r2, r2, #1 ; i += step
+bytes 0x07FE000000000000  ; jmp for_loop_0
+bytes 0x0100010000000000  ; mov r0, r1 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1
+label for_loop_0 4
+label for_continue_2 7
+label for_exit_1 9

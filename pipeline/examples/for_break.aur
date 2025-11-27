@@ -1,0 +1,14 @@
+// Test for loop with break
+// Loop should stop at i=3, so sum = 0+1+2 = 3
+module main {
+    fn main() -> int {
+        let sum: int = 0;
+        for i in 0..10 {
+            if i == 3 {
+                break;
+            }
+            sum = sum + i;
+        }
+        return sum;
+    }
+}

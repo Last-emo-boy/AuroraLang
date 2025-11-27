@@ -1,0 +1,11 @@
+// Simple division test
+// Expected: 24 / 4 = 6
+
+module test {
+    fn main() -> int {
+        let a: int = 24;
+        let b: int = 4;
+        let result: int = a / b;
+        return result;
+    }
+}

@@ -1,0 +1,19 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: ../examples/arithmetic_ops.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0101FF0000000006  ; mov r1, #6 ; a
+bytes 0x0102FF0000000004  ; mov r2, #4 ; b
+bytes 0x0103FF0000000000  ; mov r3, #0 ; result
+bytes 0x0103010000000000  ; mov r3, r1
+bytes 0x0D03030200000000  ; mul r3, r3, r2
+bytes 0x0E03030200000000  ; div r3, r3, r2
+bytes 0x0F03030200000000  ; rem r3, r3, r2
+bytes 0x040303FF00000008  ; add r3, r3, #8
+bytes 0x0100030000000000  ; mov r0, r3
+bytes 0x0B02000000000000  ; svc 0x02
+bytes 0x0100030000000000  ; mov r0, r3 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1
