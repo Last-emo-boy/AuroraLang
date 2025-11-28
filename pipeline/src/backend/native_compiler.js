@@ -128,6 +128,19 @@ function compileToNative(manifest) {
     stringLabels.set(name, label);
   }
   
+  // ===== STACK FRAME SETUP =====
+  // Linux System V ABI requires 16-byte stack alignment
+  // We allocate space for spilled registers (similar to Windows)
+  const SPILL_SLOTS = 16;  // Support up to 16 spilled variables
+  const FRAME_SIZE = SPILL_SLOTS * 8;  // 128 bytes for spill slots
+  
+  // SUB RSP, FRAME_SIZE
+  encoder.emit(0x48, 0x81, 0xEC);  // SUB RSP, imm32
+  encoder.emit(FRAME_SIZE & 0xFF);
+  encoder.emit((FRAME_SIZE >> 8) & 0xFF);
+  encoder.emit((FRAME_SIZE >> 16) & 0xFF);
+  encoder.emit((FRAME_SIZE >> 24) & 0xFF);
+  
   // Map instruction indices to code offsets
   const instrOffsets = new Map();
   
@@ -240,15 +253,19 @@ function compileInstruction(encoder, instr, stringLabels) {
       break;
       
     case OPCODE.DIV:
-      // Division is complex on x86-64, needs rax/rdx
-      // For simplicity, implement a helper sequence
-      // TODO: Implement proper division
-      encoder.emit(0x90);  // nop placeholder
+      // DIV reg, reg, reg -> reg = reg / reg
+      if (op0 !== op1) {
+        encoder.movRegReg(op0, op1);
+      }
+      encoder.idivReg(op0, op2);
       break;
       
     case OPCODE.REM:
-      // Similar to DIV
-      encoder.emit(0x90);  // nop placeholder
+      // REM reg, reg, reg -> reg = reg % reg
+      if (op0 !== op1) {
+        encoder.movRegReg(op0, op1);
+      }
+      encoder.iremReg(op0, op2);
       break;
       
     case OPCODE.CMP:
@@ -348,6 +365,16 @@ function compileInstruction(encoder, instr, stringLabels) {
       }
       break;
       
+    case OPCODE.STORE_STACK:
+      // STORE_STACK slot, reg -> [RSP+slot*8], reg
+      encoder.movStackReg(op0 * 8, op1);
+      break;
+      
+    case OPCODE.LOAD_STACK:
+      // LOAD_STACK reg, slot -> reg, [RSP+slot*8]
+      encoder.movRegStack(op0, op1 * 8);
+      break;
+      
     default:
       console.warn(`Unknown opcode: 0x${opcode.toString(16)}`);
       encoder.emit(0x90);  // nop
@@ -393,6 +420,49 @@ function compileSyscall(encoder, serviceCode, op1) {
       // mov rax, 60 (exit syscall)
       encoder.emit(0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00);
       
+      encoder.syscall();
+      break;
+      
+    case 0x03:  // pause - wait for Enter, show exit code
+      // Aurora: r0 has exit code
+      // We'll print "Exit code: <num>\nPress Enter to continue..." then read
+      
+      // Save exit code (rax) to r12
+      encoder.emit(0x49, 0x89, 0xC4);  // mov r12, rax
+      
+      // Print "Exit code: "
+      // First, let's print the static prefix
+      // For simplicity, we'll print a minimal message
+      // In practice, you'd want to convert the number to string
+      
+      // Write "Exit code: " to stdout
+      // We need to add this string to data section - handled by encoder
+      
+      // For now, let's do a simple version that just waits for Enter
+      // mov rax, 0 (read syscall)
+      encoder.emit(0x48, 0xC7, 0xC0, 0x00, 0x00, 0x00, 0x00);
+      // mov rdi, 0 (stdin)
+      encoder.emit(0x48, 0xC7, 0xC7, 0x00, 0x00, 0x00, 0x00);
+      // lea rsi, [rsp-8] (buffer on stack)
+      encoder.emit(0x48, 0x8D, 0x74, 0x24, 0xF8);
+      // mov rdx, 1 (read 1 byte)
+      encoder.emit(0x48, 0xC7, 0xC2, 0x01, 0x00, 0x00, 0x00);
+      encoder.syscall();
+      
+      // Restore exit code
+      encoder.emit(0x4C, 0x89, 0xE7);  // mov rdi, r12
+      
+      // exit syscall
+      encoder.emit(0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00);  // mov rax, 60
+      encoder.syscall();
+      break;
+      
+    case 0x04:  // pause_silent - just wait for Enter
+      // read(stdin, buf, 1)
+      encoder.emit(0x48, 0xC7, 0xC0, 0x00, 0x00, 0x00, 0x00);  // mov rax, 0
+      encoder.emit(0x48, 0xC7, 0xC7, 0x00, 0x00, 0x00, 0x00);  // mov rdi, 0
+      encoder.emit(0x48, 0x8D, 0x74, 0x24, 0xF8);              // lea rsi, [rsp-8]
+      encoder.emit(0x48, 0xC7, 0xC2, 0x01, 0x00, 0x00, 0x00);  // mov rdx, 1
       encoder.syscall();
       break;
       

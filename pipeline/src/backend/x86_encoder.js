@@ -34,8 +34,8 @@ const fs = require('fs');
 const OPCODE = {
   NOP: 0x00,
   MOV: 0x01,
-  LD: 0x02,
-  ST: 0x03,
+  PUSH: 0x02,   // Push register to stack (for spilling)
+  POP: 0x03,    // Pop from stack to register
   ADD: 0x04,
   SUB: 0x05,
   CMP: 0x06,
@@ -54,6 +54,8 @@ const OPCODE = {
   NOT: 0x13,
   SHL: 0x14,
   SHR: 0x15,
+  STORE_STACK: 0x16,  // Store reg to [RSP+offset]
+  LOAD_STACK: 0x17,   // Load reg from [RSP+offset]
 };
 
 // CJMP condition codes
@@ -359,6 +361,174 @@ class X86Encoder {
     this.emit(0xC1);
     this.emit(this.modrm(3, 5, r));
     this.emit(imm & 0x3F);
+  }
+  
+  // PUSH reg
+  pushReg(reg) {
+    const r = REG_MAP[reg];
+    if (r >= 8) {
+      this.emit(0x41); // REX.B
+    }
+    this.emit(0x50 + (r & 7));
+  }
+  
+  // POP reg
+  popReg(reg) {
+    const r = REG_MAP[reg];
+    if (r >= 8) {
+      this.emit(0x41); // REX.B
+    }
+    this.emit(0x58 + (r & 7));
+  }
+  
+  // MOV [RSP+offset], reg - Store register to stack
+  movStackReg(offset, srcReg) {
+    const src = REG_MAP[srcReg];
+    // REX.W + 89 /r with SIB for RSP-based addressing
+    // MOV [RSP+disp8/32], reg
+    this.emit(this.rex(1, src >= 8 ? 1 : 0, 0, 0));
+    this.emit(0x89);
+    
+    if (offset === 0) {
+      // [RSP] requires SIB byte: mod=00, rm=100, SIB=24 (base=RSP, index=none)
+      this.emit(this.modrm(0, src & 7, 4));
+      this.emit(0x24); // SIB: scale=0, index=RSP(none), base=RSP
+    } else if (offset >= -128 && offset <= 127) {
+      // [RSP+disp8] requires SIB byte
+      this.emit(this.modrm(1, src & 7, 4));
+      this.emit(0x24); // SIB
+      this.emit(offset & 0xFF);
+    } else {
+      // [RSP+disp32] requires SIB byte
+      this.emit(this.modrm(2, src & 7, 4));
+      this.emit(0x24); // SIB
+      this.emit(offset & 0xFF);
+      this.emit((offset >> 8) & 0xFF);
+      this.emit((offset >> 16) & 0xFF);
+      this.emit((offset >> 24) & 0xFF);
+    }
+  }
+  
+  // MOV reg, [RSP+offset] - Load register from stack
+  movRegStack(destReg, offset) {
+    const dest = REG_MAP[destReg];
+    // REX.W + 8B /r with SIB for RSP-based addressing
+    this.emit(this.rex(1, dest >= 8 ? 1 : 0, 0, 0));
+    this.emit(0x8B);
+    
+    if (offset === 0) {
+      this.emit(this.modrm(0, dest & 7, 4));
+      this.emit(0x24); // SIB
+    } else if (offset >= -128 && offset <= 127) {
+      this.emit(this.modrm(1, dest & 7, 4));
+      this.emit(0x24); // SIB
+      this.emit(offset & 0xFF);
+    } else {
+      this.emit(this.modrm(2, dest & 7, 4));
+      this.emit(0x24); // SIB
+      this.emit(offset & 0xFF);
+      this.emit((offset >> 8) & 0xFF);
+      this.emit((offset >> 16) & 0xFF);
+      this.emit((offset >> 24) & 0xFF);
+    }
+  }
+  
+  // IDIV - Signed divide RDX:RAX by reg, quotient in RAX, remainder in RDX
+  // destAurora = destAurora / divisorAurora
+  idivReg(destAurora, divisorAurora) {
+    const destX86 = REG_MAP[destAurora];
+    const divisorX86 = REG_MAP[divisorAurora];
+    
+    // We need:
+    // 1. RAX = dividend (destAurora)
+    // 2. RDX = 0 (sign extended, but we use 0 for unsigned-like behavior)
+    // 3. IDIV divisor
+    // 4. Result (quotient) in RAX -> move to dest
+    
+    // Use R11 as temp to avoid conflicts
+    const R11 = 11;
+    
+    // Save divisor to R11 if it would be clobbered
+    if (divisorX86 === 0 || divisorX86 === 2) { // RAX or RDX
+      // MOV R11, divisor
+      this.emit(this.rex(1, 1, 0, divisorX86 >= 8 ? 1 : 0));
+      this.emit(0x8B);
+      this.emit(this.modrm(3, R11 & 7, divisorX86 & 7));
+    }
+    
+    // MOV RAX, dest (if not already RAX)
+    if (destX86 !== 0) {
+      this.emit(this.rex(1, 0, 0, destX86 >= 8 ? 1 : 0));
+      this.emit(0x8B);
+      this.emit(this.modrm(3, 0, destX86 & 7));
+    }
+    
+    // XOR RDX, RDX (clear for unsigned division)
+    this.emit(0x48);
+    this.emit(0x31);
+    this.emit(0xD2);
+    
+    // IDIV (divisor or R11)
+    let actualDivisor = divisorX86;
+    if (divisorX86 === 0 || divisorX86 === 2) {
+      actualDivisor = R11;
+    }
+    
+    // REX.W + F7 /7
+    this.emit(this.rex(1, 0, 0, actualDivisor >= 8 ? 1 : 0));
+    this.emit(0xF7);
+    this.emit(this.modrm(3, 7, actualDivisor & 7));
+    
+    // MOV dest, RAX (if dest is not RAX)
+    if (destX86 !== 0) {
+      this.emit(this.rex(1, destX86 >= 8 ? 1 : 0, 0, 0));
+      this.emit(0x8B);
+      this.emit(this.modrm(3, destX86 & 7, 0));
+    }
+  }
+  
+  // IREM - Signed remainder: destAurora = destAurora % divisorAurora
+  iremReg(destAurora, divisorAurora) {
+    const destX86 = REG_MAP[destAurora];
+    const divisorX86 = REG_MAP[divisorAurora];
+    
+    const R11 = 11;
+    
+    // Save divisor to R11 if it would be clobbered
+    if (divisorX86 === 0 || divisorX86 === 2) {
+      this.emit(this.rex(1, 1, 0, divisorX86 >= 8 ? 1 : 0));
+      this.emit(0x8B);
+      this.emit(this.modrm(3, R11 & 7, divisorX86 & 7));
+    }
+    
+    // MOV RAX, dest
+    if (destX86 !== 0) {
+      this.emit(this.rex(1, 0, 0, destX86 >= 8 ? 1 : 0));
+      this.emit(0x8B);
+      this.emit(this.modrm(3, 0, destX86 & 7));
+    }
+    
+    // XOR RDX, RDX
+    this.emit(0x48);
+    this.emit(0x31);
+    this.emit(0xD2);
+    
+    // IDIV
+    let actualDivisor = divisorX86;
+    if (divisorX86 === 0 || divisorX86 === 2) {
+      actualDivisor = R11;
+    }
+    
+    this.emit(this.rex(1, 0, 0, actualDivisor >= 8 ? 1 : 0));
+    this.emit(0xF7);
+    this.emit(this.modrm(3, 7, actualDivisor & 7));
+    
+    // MOV dest, RDX (remainder is in RDX)
+    if (destX86 !== 2) {
+      this.emit(this.rex(1, destX86 >= 8 ? 1 : 0, 0, 0));
+      this.emit(0x8B);
+      this.emit(this.modrm(3, destX86 & 7, 2)); // src = RDX
+    }
   }
   
   // Add string to data section, return label

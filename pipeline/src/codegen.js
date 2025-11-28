@@ -862,6 +862,8 @@ function generateRequest(stmt, ctx) {
   const serviceMap = {
     print: 0x01,
     exit: 0x02,
+    pause: 0x03,           // Wait for key press, show exit code
+    pause_silent: 0x04,    // Wait for key press without message
   };
   
   const serviceCode = serviceMap[stmt.service];

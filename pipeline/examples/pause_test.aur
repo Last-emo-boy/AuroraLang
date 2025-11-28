@@ -1,0 +1,13 @@
+// Test pause functionality
+// This program will wait for Enter key before exiting
+
+module test {
+    fn main() -> int {
+        let result: int = 42;
+        
+        // Show exit code and wait for Enter
+        request service pause(result);
+        
+        return result;
+    }
+}

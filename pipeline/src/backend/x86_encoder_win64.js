@@ -193,6 +193,115 @@ class X86EncoderWin64 {
     }
   }
   
+  // IDIV - Signed division: RAX = RDX:RAX / divisor, RDX = remainder
+  // destAurora receives quotient, divisorAurora is the divisor
+  // Caller must ensure dividend is in destAurora (moved to RAX)
+  idivReg(destAurora, divisorAurora) {
+    const dest = this.mapReg(destAurora);
+    const divisor = this.mapReg(divisorAurora);
+    
+    // Choose a temp register that's not dest, divisor, RAX, or RDX
+    // Options: RBX(3), RSI(6), RDI(7), R10(10), R11(11), etc.
+    let tempReg = WIN64_REG.R10;  // Default to R10
+    if (dest === WIN64_REG.R10 || divisor === WIN64_REG.R10) {
+      tempReg = WIN64_REG.R11;
+    }
+    if (dest === tempReg || divisor === tempReg) {
+      tempReg = WIN64_REG.RBX;  // Last resort
+    }
+    
+    let actualDivisor = divisor;
+    
+    // If divisor is RDX or RAX, save it to temp first (they get clobbered)
+    if (divisor === WIN64_REG.RDX || divisor === WIN64_REG.RAX) {
+      // MOV temp, divisor
+      this.emit(this.rex(1, tempReg >= 8, 0, divisor >= 8));
+      this.emit(0x8B);
+      this.emit(this.modrm(3, tempReg & 7, divisor & 7));
+      actualDivisor = tempReg;
+    }
+    
+    // Save RDX (we'll clobber it with CQO)
+    this.emit(0x52);  // PUSH RDX
+    
+    // Move dividend to RAX if not already there
+    if (dest !== WIN64_REG.RAX) {
+      // MOV RAX, dest
+      this.emit(this.rex(1, 0, 0, dest >= 8));
+      this.emit(0x8B);  // MOV r64, r/m64
+      this.emit(this.modrm(3, WIN64_REG.RAX & 7, dest & 7));
+    }
+    
+    // Sign-extend RAX into RDX:RAX (CQO instruction)
+    this.emit(0x48, 0x99);  // CQO
+    
+    // IDIV r/m64
+    this.emit(this.rex(1, 0, 0, actualDivisor >= 8));
+    this.emit(0xF7);  // IDIV r/m64
+    this.emit(this.modrm(3, 7, actualDivisor & 7));
+    
+    // Quotient is now in RAX, move to dest if needed
+    if (dest !== WIN64_REG.RAX) {
+      // MOV dest, RAX
+      this.emit(this.rex(1, dest >= 8, 0, 0));
+      this.emit(0x8B);  // MOV r64, r/m64
+      this.emit(this.modrm(3, dest & 7, WIN64_REG.RAX & 7));
+    }
+    
+    // Restore RDX
+    this.emit(0x5A);  // POP RDX
+  }
+  
+  // IDIV for remainder - same as idiv but returns RDX (remainder)
+  iremReg(destAurora, divisorAurora) {
+    const dest = this.mapReg(destAurora);
+    const divisor = this.mapReg(divisorAurora);
+    
+    // Choose a temp register that's not dest, divisor, RAX, or RDX
+    let tempReg = WIN64_REG.R10;
+    if (dest === WIN64_REG.R10 || divisor === WIN64_REG.R10) {
+      tempReg = WIN64_REG.R11;
+    }
+    if (dest === tempReg || divisor === tempReg) {
+      tempReg = WIN64_REG.RBX;
+    }
+    
+    let actualDivisor = divisor;
+    
+    // If divisor is RDX or RAX, save it to temp first (they get clobbered)
+    if (divisor === WIN64_REG.RDX || divisor === WIN64_REG.RAX) {
+      // MOV temp, divisor
+      this.emit(this.rex(1, tempReg >= 8, 0, divisor >= 8));
+      this.emit(0x8B);
+      this.emit(this.modrm(3, tempReg & 7, divisor & 7));
+      actualDivisor = tempReg;
+    }
+    
+    // Move dividend to RAX if not already there
+    if (dest !== WIN64_REG.RAX) {
+      // MOV RAX, dest
+      this.emit(this.rex(1, 0, 0, dest >= 8));
+      this.emit(0x8B);  // MOV r64, r/m64
+      this.emit(this.modrm(3, WIN64_REG.RAX & 7, dest & 7));
+    }
+    
+    // Sign-extend RAX into RDX:RAX (CQO instruction)
+    this.emit(0x48, 0x99);  // CQO
+    
+    // IDIV r/m64
+    this.emit(this.rex(1, 0, 0, actualDivisor >= 8));
+    this.emit(0xF7);  // IDIV r/m64
+    this.emit(this.modrm(3, 7, actualDivisor & 7));
+    
+    // Remainder is in RDX, move to dest
+    if (dest !== WIN64_REG.RDX) {
+      // MOV dest, RDX
+      this.emit(this.rex(1, dest >= 8, 0, 0));
+      this.emit(0x8B);  // MOV r64, r/m64
+      this.emit(this.modrm(3, dest & 7, WIN64_REG.RDX & 7));
+    }
+  }
+  
   // ========================
   // Comparison Instructions
   // ========================

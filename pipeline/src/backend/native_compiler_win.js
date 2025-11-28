@@ -267,6 +267,31 @@ function compileInstructionWin64(encoder, instr, stringLabels, stringLengths) {
       }
       break;
       
+    case OPCODE.DIV:
+      if (op2 === 0xFF) {
+        // DIV reg, reg, imm - not directly supported, use temp register
+        // Move imm to temp (r7), then divide
+        encoder.movRegImm64(7, signedImm);  // r7 = imm
+        if (op0 !== op1) encoder.movRegReg(op0, op1);
+        encoder.idivReg(op0, 7);
+      } else {
+        if (op0 !== op1) encoder.movRegReg(op0, op1);
+        encoder.idivReg(op0, op2);
+      }
+      break;
+      
+    case OPCODE.REM:
+      if (op2 === 0xFF) {
+        // REM reg, reg, imm - use temp register
+        encoder.movRegImm64(7, signedImm);  // r7 = imm
+        if (op0 !== op1) encoder.movRegReg(op0, op1);
+        encoder.iremReg(op0, 7);
+      } else {
+        if (op0 !== op1) encoder.movRegReg(op0, op1);
+        encoder.iremReg(op0, op2);
+      }
+      break;
+      
     case OPCODE.CMP:
       if (op1 === 0xFF) {
         encoder.cmpRegImm32(op0, signedImm);
@@ -428,6 +453,114 @@ function compileSyscallWin64(encoder, svcNum, arg, stringLengths, instr) {
       encoder.callImport('ExitProcess');
       // No cleanup needed - ExitProcess doesn't return
       break;
+    
+    case 0x03:  // pause - Wait for Enter, show exit code
+      // Save exit code (RAX) to [rsp+0x40]
+      encoder.emit(0x48, 0x89, 0x44, 0x24, 0x40);  // mov [rsp+0x40], rax
+      
+      // Print "Exit code: "
+      // GetStdHandle(-11) for STDOUT
+      encoder.movRegImm64(1, -11);  // RCX = STD_OUTPUT_HANDLE
+      encoder.callImport('GetStdHandle');
+      encoder.emit(0x48, 0x89, 0x44, 0x24, 0x30);  // mov [rsp+0x30], rax (save handle)
+      
+      // WriteFile for "Exit code: "
+      encoder.emit(0x48, 0x8B, 0x4C, 0x24, 0x30);  // mov rcx, [rsp+0x30] (handle)
+      encoder.movRegImm64(2, 0);  // RDX = placeholder for string addr
+      encoder.relocations.push({
+        offset: encoder.code.length - 8,
+        label: '_exit_code_str',
+        type: 'abs64'
+      });
+      encoder.movRegImm64(3, 12);  // R8 = 12 ("Exit code: " length)
+      encoder.emit(0x4C, 0x8D, 0x4C, 0x24, 0x28);  // lea r9, [rsp+0x28]
+      encoder.emit(0x48, 0xC7, 0x44, 0x24, 0x20, 0x00, 0x00, 0x00, 0x00);  // mov qword [rsp+0x20], 0
+      encoder.callImport('WriteFile');
+      
+      // Convert exit code to decimal string using division loop
+      // Buffer for digits at [rsp+0x50] (up to 20 digits + newline)
+      // RAX = number to convert
+      encoder.emit(0x48, 0x8B, 0x44, 0x24, 0x40);  // mov rax, [rsp+0x40]
+      
+      // R10 = buffer end pointer (we build string backwards)
+      encoder.emit(0x4C, 0x8D, 0x54, 0x24, 0x5E);  // lea r10, [rsp+0x5E] (buffer + 14)
+      encoder.emit(0x41, 0xC6, 0x02, 0x0A);        // mov byte [r10], 0x0A (newline at end)
+      
+      // R11 = digit count
+      encoder.emit(0x4D, 0x31, 0xDB);              // xor r11, r11
+      
+      // divisor = 10 in RCX for later
+      encoder.emit(0x48, 0xC7, 0xC1, 0x0A, 0x00, 0x00, 0x00);  // mov rcx, 10
+      
+      // Loop: divide by 10, store remainder as digit
+      const loopStart = encoder.code.length;
+      encoder.emit(0x49, 0xFF, 0xCA);              // dec r10 (move pointer back)
+      encoder.emit(0x49, 0xFF, 0xC3);              // inc r11 (count digits)
+      encoder.emit(0x48, 0x31, 0xD2);              // xor rdx, rdx (clear high bits for div)
+      encoder.emit(0x48, 0xF7, 0xF1);              // div rcx (rax = rax/10, rdx = rax%10)
+      encoder.emit(0x48, 0x83, 0xC2, 0x30);        // add rdx, '0' (convert to ASCII)
+      encoder.emit(0x41, 0x88, 0x12);              // mov [r10], dl (store digit)
+      encoder.emit(0x48, 0x85, 0xC0);              // test rax, rax
+      // jnz back to loop
+      const loopOffset = loopStart - (encoder.code.length + 2);
+      encoder.emit(0x75, loopOffset & 0xFF);       // jnz loop
+      
+      // R10 now points to first digit, R11 = digit count
+      // Add 1 for newline
+      encoder.emit(0x49, 0xFF, 0xC3);              // inc r11
+      
+      // WriteFile for the number
+      encoder.emit(0x48, 0x8B, 0x4C, 0x24, 0x30);  // mov rcx, [rsp+0x30] (handle)
+      encoder.emit(0x4C, 0x89, 0xD2);              // mov rdx, r10 (buffer start)
+      encoder.emit(0x4D, 0x89, 0xD8);              // mov r8, r11 (length)
+      encoder.emit(0x4C, 0x8D, 0x4C, 0x24, 0x28);  // lea r9, [rsp+0x28]
+      encoder.emit(0x48, 0xC7, 0x44, 0x24, 0x20, 0x00, 0x00, 0x00, 0x00);
+      encoder.callImport('WriteFile');
+      
+      // Print "Press Enter to continue..."
+      encoder.emit(0x48, 0x8B, 0x4C, 0x24, 0x30);  // mov rcx, [rsp+0x30] (handle)
+      encoder.movRegImm64(2, 0);  // RDX = placeholder
+      encoder.relocations.push({
+        offset: encoder.code.length - 8,
+        label: '_press_enter_str',
+        type: 'abs64'
+      });
+      encoder.movRegImm64(3, 27);  // R8 = 27 ("Press Enter to continue..." length)
+      encoder.emit(0x4C, 0x8D, 0x4C, 0x24, 0x28);  // lea r9, [rsp+0x28]
+      encoder.emit(0x48, 0xC7, 0x44, 0x24, 0x20, 0x00, 0x00, 0x00, 0x00);  // mov qword [rsp+0x20], 0
+      encoder.callImport('WriteFile');
+      
+      // Wait for Enter key using ReadConsoleA
+      encoder.movRegImm64(1, -10);  // RCX = STD_INPUT_HANDLE
+      encoder.callImport('GetStdHandle');
+      encoder.emit(0x48, 0x89, 0xC1);  // mov rcx, rax (handle)
+      encoder.emit(0x48, 0x8D, 0x54, 0x24, 0x48);  // lea rdx, [rsp+0x48] (buffer)
+      encoder.movRegImm64(3, 2);  // R8 = 2
+      encoder.emit(0x4C, 0x8D, 0x4C, 0x24, 0x28);  // lea r9, [rsp+0x28]
+      encoder.emit(0x48, 0xC7, 0x44, 0x24, 0x20, 0x00, 0x00, 0x00, 0x00);
+      encoder.callImport('ReadConsoleA');
+      
+      // Restore exit code to RAX for HALT
+      encoder.emit(0x48, 0x8B, 0x44, 0x24, 0x40);  // mov rax, [rsp+0x40]
+      break;
+      
+    case 0x04:  // pause_silent - Just wait for Enter, no message
+      // Save exit code
+      encoder.emit(0x48, 0x89, 0x44, 0x24, 0x40);  // mov [rsp+0x40], rax
+      
+      // GetStdHandle(-10) for STDIN
+      encoder.movRegImm64(1, -10);  // RCX = STD_INPUT_HANDLE
+      encoder.callImport('GetStdHandle');
+      encoder.emit(0x48, 0x89, 0xC1);  // mov rcx, rax (handle)
+      encoder.emit(0x48, 0x8D, 0x54, 0x24, 0x48);  // lea rdx, [rsp+0x48] (buffer)
+      encoder.movRegImm64(3, 2);  // R8 = 2
+      encoder.emit(0x4C, 0x8D, 0x4C, 0x24, 0x28);  // lea r9, [rsp+0x28]
+      encoder.emit(0x48, 0xC7, 0x44, 0x24, 0x20, 0x00, 0x00, 0x00, 0x00);  // mov qword [rsp+0x20], 0
+      encoder.callImport('ReadConsoleA');
+      
+      // Restore exit code
+      encoder.emit(0x48, 0x8B, 0x44, 0x24, 0x40);  // mov rax, [rsp+0x40]
+      break;
       
     default:
       encoder.emit(0x90);  // NOP
@@ -441,18 +574,34 @@ function compileManifestToWindows(manifestContent) {
   // Compile to Windows x64
   const { encoder, stringLengths } = compileToWindows(manifest);
   
+  // Add builtin strings for pause functionality
+  encoder.dataLabels.set('_exit_code_str', encoder.dataSection.length);
+  const exitCodeStr = 'Exit code: ';
+  for (let i = 0; i < exitCodeStr.length; i++) {
+    encoder.dataSection.push(exitCodeStr.charCodeAt(i));
+  }
+  encoder.dataSection.push(0);  // null terminator
+  
+  encoder.dataLabels.set('_press_enter_str', encoder.dataSection.length);
+  const pressEnterStr = 'Press Enter to continue...';
+  for (let i = 0; i < pressEnterStr.length; i++) {
+    encoder.dataSection.push(pressEnterStr.charCodeAt(i));
+  }
+  encoder.dataSection.push(0);  // null terminator
+  
   // Generate PE64
   const peGen = new PE64Generator();
   
-  // Build import data
+  // Build import data - include ReadConsoleA for pause functionality
   const importData = peGen.buildImportData({
-    'kernel32.dll': ['ExitProcess', 'GetStdHandle', 'WriteFile']
+    'kernel32.dll': ['ExitProcess', 'GetStdHandle', 'WriteFile', 'ReadConsoleA']
   });
   
   // Set up import addresses for the encoder
   encoder.setImport('ExitProcess', Number(peGen.imageBase) + importData.functionOffsets['ExitProcess']);
   encoder.setImport('GetStdHandle', Number(peGen.imageBase) + importData.functionOffsets['GetStdHandle']);
   encoder.setImport('WriteFile', Number(peGen.imageBase) + importData.functionOffsets['WriteFile']);
+  encoder.setImport('ReadConsoleA', Number(peGen.imageBase) + importData.functionOffsets['ReadConsoleA']);
   
   // Resolve relocations
   encoder.resolve(
@@ -467,7 +616,7 @@ function compileManifestToWindows(manifestContent) {
   
   // Generate PE
   return peGen.generate(code, data, {
-    'kernel32.dll': ['ExitProcess', 'GetStdHandle', 'WriteFile']
+    'kernel32.dll': ['ExitProcess', 'GetStdHandle', 'WriteFile', 'ReadConsoleA']
   });
 }
 

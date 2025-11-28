@@ -878,9 +878,141 @@ for i in 0..10 {
 3. 逻辑运算符暂时不支持作为 if 条件（需要手动使用嵌套 if）
 
 **下一步计划**
-1. **寄存器溢出（Spilling）**：当寄存器不足时自动保存到栈
+1. **寄存器溢出（Spilling）**：当寄存器不足时自动保存到栈 ✅ 已完成
 2. **数组支持**：声明、索引访问、赋值
 3. **函数参数**：支持带参数的函数调用
 4. **字符串操作**：连接、长度、切片
+
+---
+
+### Iteration 14 - 寄存器溢出 (Register Spilling) ✅
+
+**目标**：实现寄存器溢出机制，支持任意数量的变量
+
+**背景问题**
+- Aurora 使用 8 个虚拟寄存器 (r0-r7)
+- r0 保留用于返回值，r6-r7 用于临时计算
+- 只有 r1-r5 (5个) 可用于变量
+- 当变量超过 5 个时，之前会抛出错误
+
+**解决方案**
+
+#### 1. ISA 扩展
+新增两个栈操作指令：
+
+| 操作码 | 名称 | 格式 | 描述 |
+|--------|------|------|------|
+| 0x16 | STORE_STACK | `store rX -> [RSP+offset]` | 将寄存器值保存到栈槽 |
+| 0x17 | LOAD_STACK | `load rX <- [RSP+offset]` | 从栈槽恢复寄存器值 |
+
+#### 2. 栈帧布局 (Win64)
+```
+RSP+0x00 ~ +0x1F : Shadow space (32 bytes, Win64 ABI)
+RSP+0x20 ~ +0x27 : Spill slot 0
+RSP+0x28 ~ +0x2F : Spill slot 1
+RSP+0x30 ~ +0x37 : Spill slot 2
+...
+```
+
+#### 3. 寄存器分配器重写 (`register_allocator.js`)
+
+**核心数据结构**：
+- `regToVar[]` - 寄存器到变量的映射
+- `varToReg{}` - 变量到寄存器的映射
+- `varsOnStack{}` - 已溢出变量的栈槽映射
+- `varToStackSlot{}` - 变量到栈槽的持久映射
+- `initializedVars` - 已初始化变量集合（只溢出有值的变量）
+- `lruOrder[]` - LRU 队列，记录寄存器使用顺序
+
+**关键算法**：
+```javascript
+allocateVariable(varName):
+  1. 如果变量已在寄存器中，返回该寄存器
+  2. 如果有空闲寄存器，分配它
+  3. 否则，找到 LRU 的已初始化变量，将其溢出到栈
+  4. 分配被释放的寄存器
+
+getVariable(varName):
+  1. 如果变量在寄存器中，返回它
+  2. 如果变量在栈上，从栈重新加载到新寄存器
+  3. 否则抛出错误
+
+markInitialized(varName):
+  记录变量已被赋值（只有已初始化的变量需要溢出）
+```
+
+#### 4. 代码生成改进 (`codegen.js`)
+
+**表达式生成优化**：
+- `generateBinaryInto(expr, destReg)` - 递归处理嵌套二元表达式
+- 直接将结果写入目标寄存器，减少临时寄存器使用
+- 左操作数链式优化，最小化寄存器压力
+
+**声明语句修复**：
+```javascript
+generateDeclaration():
+  1. 先计算表达式值到临时寄存器
+  2. 再分配目标变量的寄存器
+  3. 最后移动值到目标
+  // 避免在计算过程中目标变量被驱逐
+```
+
+#### 5. x64 编码器更新 (`x86_encoder_win64.js`)
+
+**新增方法**：
+- `movStackReg(offset, srcAurora)` - MOV [RSP+offset], reg
+- `movRegStack(destAurora, offset)` - MOV reg, [RSP+offset]
+
+使用 SIB 字节编码 RSP 基址寻址：
+```x86
+; MOV [RSP+0x20], R11
+4C 89 5C 24 20  ; REX.WR, 89 (MOV r/m64,r64), ModRM(01,011,100), SIB(00,100,100), disp8
+```
+
+#### 6. 除法/取余指令修复
+
+**问题**：`DIV` 和 `REM` 操作之前未在 `native_compiler_win.js` 中实现
+
+**解决**：
+- 添加 `idivReg()` 和 `iremReg()` 方法
+- 正确处理 RDX:RAX 被除数扩展 (CQO 指令)
+- 避免临时寄存器与目标/除数冲突
+
+**测试验证** ✅
+
+| 测试文件 | 变量数 | 预期 | 实际 | 状态 |
+|---------|--------|------|------|------|
+| spill_test.aur | 8 | 36 | 36 | ✅ |
+| spill_stress_test.aur | 15 | 120 | 120 | ✅ |
+| div_test.aur | - | 6 | 6 | ✅ |
+| arithmetic_ops.aur | - | 10 | 10 | ✅ |
+
+**测试套件** ✅
+```
+🧪 Aurora Pipeline Test Suite
+
+▶ Running test: hello_world       ✅ PASS (9 instructions)
+▶ Running test: loop_sum          ✅ PASS (13 instructions)
+▶ Running test: conditional       ✅ PASS (15 instructions)
+▶ Running test: conditional_no_else ✅ PASS (10 instructions)
+▶ Running test: arithmetic_ops    ✅ PASS (14 instructions)
+▶ Running test: complex_expr      ✅ PASS (18 instructions)
+▶ Running test: bitwise_ops       ✅ PASS (25 instructions)
+▶ Running test: function_call     ✅ PASS (18 instructions)
+
+📊 Test Summary: 8/8 Passed
+```
+
+**文件变更**
+- `pipeline/src/codegen.js` - 新增 STORE_STACK/LOAD_STACK 编码，优化表达式生成
+- `pipeline/src/register_allocator.js` - 完全重写，支持 LRU 溢出
+- `pipeline/src/backend/x86_encoder_win64.js` - 新增栈寻址和除法指令
+- `pipeline/src/backend/native_compiler_win.js` - 新增 DIV/REM/STORE_STACK/LOAD_STACK case
+
+**下一步计划**
+1. **数组支持**：声明、索引访问、赋值
+2. **函数参数**：支持带参数的函数调用
+3. **字符串操作**：连接、长度、切片
+4. **Linux 原生支持**：为 x86_encoder.js (Linux) 添加溢出支持
 
 ```

@@ -1,0 +1,11 @@
+// Simple remainder test
+// Expected: 25 % 7 = 4
+
+module test {
+    fn main() -> int {
+        let a: int = 25;
+        let b: int = 7;
+        let result: int = a % b;
+        return result;
+    }
+}
