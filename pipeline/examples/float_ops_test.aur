@@ -1,0 +1,29 @@
+module test {
+    fn main() -> int {
+        // Test basic float operations
+        let a: float = 5.0;
+        let b: float = 3.0;
+        
+        // Addition: 5.0 + 3.0 = 8.0
+        let sum: float = a + b;
+        
+        // Subtraction: 5.0 - 3.0 = 2.0
+        let diff: float = a - b;
+        
+        // Multiplication: 5.0 * 3.0 = 15.0
+        let prod: float = a * b;
+        
+        // Division: 5.0 / 3.0 = 1.66... -> truncates to 1
+        let quot: float = a / b;
+        
+        // Combine results: 8 + 2 + 15 + 1 = 26
+        let result_sum: int = sum;
+        let result_diff: int = diff;
+        let result_prod: int = prod;
+        let result_quot: int = quot;
+        
+        let total: int = result_sum + result_diff + result_prod + result_quot;
+        
+        return total;
+    }
+}

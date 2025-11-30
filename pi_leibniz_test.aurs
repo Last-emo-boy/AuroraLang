@@ -1,0 +1,38 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: .\pipeline\examples\pi_leibniz_test.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x2000FF0000000000  ; fmov xmm0, 0 ; sum
+bytes 0x0000000000000000  ;   ; float64 0
+bytes 0x2001FF0000000000  ; fmov xmm1, 1 ; sign
+bytes 0x3FF0000000000000  ;   ; float64 1
+bytes 0x2002FF0000000000  ; fmov xmm2, 1 ; divisor
+bytes 0x3FF0000000000000  ;   ; float64 1
+bytes 0x0101FF0000000000  ; mov r1, #0 ; i
+bytes 0x2407010200000000  ; fdiv xmm7, xmm1, xmm2
+bytes 0x2106000700000000  ; fadd xmm6, xmm0, xmm7
+bytes 0x2000060000000000  ; fmov xmm0, xmm6 ; sum
+bytes 0x2007FF0000000000  ; fmov xmm7, -1 ; 
+bytes 0xBFF0000000000000  ;   ; float64 -1
+bytes 0x2306010700000000  ; fmul xmm6, xmm1, xmm7
+bytes 0x2001060000000000  ; fmov xmm1, xmm6 ; sign
+bytes 0x2007FF0000000000  ; fmov xmm7, 2 ; 
+bytes 0x4000000000000000  ;   ; float64 2
+bytes 0x2106020700000000  ; fadd xmm6, xmm2, xmm7
+bytes 0x2002060000000000  ; fmov xmm2, xmm6 ; divisor
+bytes 0x040101FF00000001  ; add r1, r1, #1
+bytes 0x0601FF00000003E8  ; cmp r1, #1000
+bytes 0x0801FE0000000000  ; cjmp eq, exit_1
+bytes 0x07FE000000000000  ; jmp loop_0
+bytes 0x2007FF0000000000  ; fmov xmm7, 4 ; 
+bytes 0x4010000000000000  ;   ; float64 4
+bytes 0x2306000700000000  ; fmul xmm6, xmm0, xmm7
+bytes 0x2003060000000000  ; fmov xmm3, xmm6 ; pi_approx
+bytes 0x2902030000000000  ; cvtsd2si r2, xmm3 ; result = (int)float
+bytes 0x0100020000000000  ; mov r0, r2 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1
+label loop_0 8
+label exit_1 23

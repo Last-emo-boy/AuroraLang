@@ -1,0 +1,21 @@
+// Simple Thread Test
+// Creates a thread that runs worker(), then joins it
+// Expected: Exit code 0 (successful thread completion)
+
+module test {
+    fn worker() -> int {
+        // Thread entry point - just return a value
+        return 42;
+    }
+    
+    fn main() -> int {
+        // Spawn a new thread running worker()
+        let t: thread = spawn worker();
+        
+        // Wait for thread to complete
+        join t;
+        
+        // Return success
+        return 0;
+    }
+}

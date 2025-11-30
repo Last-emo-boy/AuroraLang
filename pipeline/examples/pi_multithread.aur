@@ -1,0 +1,94 @@
+// Multi-threaded Pi calculation using Leibniz formula
+// π/4 = 1 - 1/3 + 1/5 - 1/7 + 1/9 - ...
+// Term k: sign = (-1)^k, value = 1/(2k+1)
+//
+// Uses scaled integer arithmetic (scale = 10000) for fixed-point math
+// Each thread computes a partial sum for a range of terms
+//
+// With 4 threads, 250 terms each (1000 total), we expect ~7850 (π/4 * 10000)
+// Then π * 100 = 7850 * 4 / 100 = 314
+
+shared sum: int = 0;
+
+// Thread 0: terms 0, 4, 8, 12, ... (k = 4n) - all even, positive
+fn worker0() {
+    let i: int = 0;
+    let partial: int = 0;
+    while i < 250 {
+        let k: int = i * 4;
+        let denom: int = 2 * k + 1;
+        let term: int = 10000 / denom;
+        // k is always even here, so sign is positive
+        partial = partial + term;
+        i = i + 1;
+    }
+    atomic.add(sum, partial);
+}
+
+// Thread 1: terms 1, 5, 9, 13, ... (k = 4n+1) - all odd, negative
+fn worker1() {
+    let i: int = 0;
+    let partial: int = 0;
+    while i < 250 {
+        let k: int = i * 4 + 1;
+        let denom: int = 2 * k + 1;
+        let term: int = 10000 / denom;
+        // k is always odd here, so sign is negative
+        partial = partial - term;
+        i = i + 1;
+    }
+    atomic.add(sum, partial);
+}
+
+// Thread 2: terms 2, 6, 10, 14, ... (k = 4n+2) - all even, positive
+fn worker2() {
+    let i: int = 0;
+    let partial: int = 0;
+    while i < 250 {
+        let k: int = i * 4 + 2;
+        let denom: int = 2 * k + 1;
+        let term: int = 10000 / denom;
+        // k is always even here, so sign is positive
+        partial = partial + term;
+        i = i + 1;
+    }
+    atomic.add(sum, partial);
+}
+
+// Thread 3: terms 3, 7, 11, 15, ... (k = 4n+3) - all odd, negative
+fn worker3() {
+    let i: int = 0;
+    let partial: int = 0;
+    while i < 250 {
+        let k: int = i * 4 + 3;
+        let denom: int = 2 * k + 1;
+        let term: int = 10000 / denom;
+        // k is always odd here, so sign is negative
+        partial = partial - term;
+        i = i + 1;
+    }
+    atomic.add(sum, partial);
+}
+
+fn main() -> int {
+    // Spawn 4 worker threads
+    let t0: thread = spawn worker0();
+    let t1: thread = spawn worker1();
+    let t2: thread = spawn worker2();
+    let t3: thread = spawn worker3();
+    
+    // Wait for all threads
+    join t0;
+    join t1;
+    join t2;
+    join t3;
+    
+    // Get the accumulated sum and compute pi * 100
+    // sum represents π/4 * 10000
+    // We want π * 100 = sum * 4 / 100
+    let s: int = atomic.load(sum);
+    let pi: int = s * 4;
+    let scaled: int = pi / 100;
+    
+    return scaled;  // Exit code is π * 100, expect ~314
+}

@@ -1,0 +1,33 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/float_compare_test.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x2000FF0000000000  ; fmov xmm0, 5.5 ; x
+bytes 0x4016000000000000  ;   ; float64 5.5
+bytes 0x2001FF0000000000  ; fmov xmm1, 3.5 ; y
+bytes 0x400C000000000000  ;   ; float64 3.5
+bytes 0x0101FF0000000000  ; mov r1, #0 ; result
+bytes 0x2500010000000000  ; fcmp xmm0, xmm1
+bytes 0x0804FE0000000000  ; cjmp (negated >), endif_1
+bytes 0x0106FF000000000A  ; mov r6, #10
+bytes 0x0101060000000000  ; mov r1, r6 ; result = ...
+bytes 0x2501000000000000  ; fcmp xmm1, xmm0
+bytes 0x0806FE0000000000  ; cjmp (negated <), endif_3
+bytes 0x040101FF00000005  ; add r1, r1, #5
+bytes 0x2002FF0000000000  ; fmov xmm2, 5.5 ; z
+bytes 0x4016000000000000  ;   ; float64 5.5
+bytes 0x2500020000000000  ; fcmp xmm0, xmm2
+bytes 0x0803FE0000000000  ; cjmp (negated >=), endif_5
+bytes 0x040101FF00000003  ; add r1, r1, #3
+bytes 0x2500020000000000  ; fcmp xmm0, xmm2
+bytes 0x0802FE0000000000  ; cjmp (negated ==), endif_7
+bytes 0x040101FF00000002  ; add r1, r1, #2
+bytes 0x0100010000000000  ; mov r0, r1 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1
+label endif_1 10
+label endif_3 13
+label endif_5 18
+label endif_7 21

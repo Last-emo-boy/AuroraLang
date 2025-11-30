@@ -1,0 +1,24 @@
+// Test shared variable with atomic operations
+// Two threads increment a shared counter atomically
+// Expected: counter = 20 (10 + 10 from each thread)
+
+shared counter: int = 0;
+
+fn worker() {
+  let i: int = 0;
+  while i < 10 {
+    atomic.add(counter, 1);
+    i = i + 1;
+  }
+}
+
+fn main() -> int {
+  let t1: thread = spawn worker();
+  let t2: thread = spawn worker();
+  
+  join t1;
+  join t2;
+  
+  // Read the counter value atomically
+  return atomic.load(counter);
+}

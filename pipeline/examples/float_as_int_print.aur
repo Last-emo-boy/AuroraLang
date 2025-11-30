@@ -1,0 +1,7 @@
+// Test print with float converted to int
+fn main() -> int {
+    let x: float = 3.14;
+    let i: int = x as int;
+    print(i);
+    return 0;
+}

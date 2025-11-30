@@ -1,0 +1,22 @@
+// Float operations test
+fn main() -> int {
+    // Basic arithmetic
+    let a: float = 5.5;
+    let b: float = 2.5;
+    
+    let sum: float = a + b;    // 8.0
+    let diff: float = a - b;   // 3.0
+    let prod: float = a * b;   // 13.75
+    let quot: float = a / b;   // 2.2
+    
+    print(sum);
+    print(diff);
+    print(prod);
+    print(quot);
+    
+    // Type conversion
+    let int_val: int = a as int;  // 5
+    print(int_val);
+    
+    return 0;
+}

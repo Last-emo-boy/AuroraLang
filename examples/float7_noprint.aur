@@ -1,0 +1,24 @@
+module demo {
+    fn main() -> int {
+        // Test 7 floats without printing
+        let a: float = 1.0;
+        let b: float = 2.0;
+        let c: float = 3.0;
+        let d: float = 4.0;
+        let e: float = 5.0;
+        let f: float = 6.0;
+        let g: float = 7.0;  // 7th variable - needs spilling
+        
+        // Simple sum with sequential adds
+        let sum: float = a + b;
+        sum = sum + c;
+        sum = sum + d;
+        sum = sum + e;
+        sum = sum + f;
+        sum = sum + g;
+        
+        // Just exit with 42
+        request service exit(42);
+        return 42;
+    }
+}

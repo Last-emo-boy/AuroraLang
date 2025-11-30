@@ -1,0 +1,8 @@
+module demo {
+    fn main() -> int {
+        let x: float = 3.14159;
+        request service print_float(x);
+        request service exit(0);
+        return 0;
+    }
+}

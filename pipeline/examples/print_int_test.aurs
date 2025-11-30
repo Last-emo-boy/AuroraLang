@@ -1,0 +1,11 @@
+.entry main
+.section code
+
+main:
+  ; Load 42 into r0
+  mov r0, 42
+  ; Print integer (SVC 0x05)
+  svc 0x05
+  ; Exit with code 0
+  mov r0, 0
+  svc 0x00

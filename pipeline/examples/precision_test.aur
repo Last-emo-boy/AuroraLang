@@ -1,0 +1,15 @@
+fn main() {
+    let pi: float = 3.141592653589793;
+    let e: float = 2.718281828459045;
+    let sqrt2: float = 1.4142135623730951;
+    let small: float = 0.000000001;
+    let neg: float = -123.456789012;
+    
+    print(pi);
+    print(e);
+    print(sqrt2);
+    print(small);
+    print(neg);
+    
+    return 0;
+}

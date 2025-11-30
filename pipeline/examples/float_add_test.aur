@@ -1,0 +1,11 @@
+module test {
+    fn main() -> int {
+        let a: float = 10.5;
+        let b: float = 4.5;
+        let sum: float = a + b;
+        
+        // Convert float sum (15.0) to int - should be 15
+        let result: int = sum;
+        return result;
+    }
+}

@@ -1,0 +1,11 @@
+fn main() {
+    let two: float = 2.0;
+    print(pow(two, 2));
+    print(pow(two, 3));
+    print(pow(two, 10));
+    
+    let three: float = 3.0;
+    print(pow(three, 4));
+    
+    return 0;
+}

@@ -1,0 +1,8 @@
+// exit_only.aur - Just return 42
+module exit_only {
+
+fn main() {
+    return 42;
+}
+
+} // module

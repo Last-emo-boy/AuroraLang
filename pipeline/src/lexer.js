@@ -23,14 +23,34 @@ const TokenType = {
   SERVICE: 'SERVICE',
   TRUE: 'TRUE',
   FALSE: 'FALSE',
+  SHARED: 'SHARED',       // shared variable declaration
+  ATOMIC: 'ATOMIC',       // atomic operation prefix
   
   // Types
   INT: 'INT',
+  FLOAT: 'FLOAT',
   STRING: 'STRING',
   BOOL: 'BOOL',
+  THREAD: 'THREAD',       // thread type for handles
+  
+  // Thread keywords
+  SPAWN: 'SPAWN',         // spawn
+  JOIN: 'JOIN',           // join
+  
+  // I/O keywords
+  PRINT: 'PRINT',         // print builtin
+  INPUT: 'INPUT',         // input builtin
+  
+  // Type conversion
+  AS: 'AS',               // as (type cast)
+  
+  // Math functions
+  SQRT: 'SQRT',           // sqrt(float)
+  POW: 'POW',             // pow(float, float)
   
   // Literals
   NUMBER: 'NUMBER',
+  FLOAT_NUMBER: 'FLOAT_NUMBER',
   STRING_LITERAL: 'STRING_LITERAL',
   
   // Identifiers
@@ -75,6 +95,7 @@ const TokenType = {
   SEMICOLON: 'SEMICOLON', // ;
   ARROW: 'ARROW',         // ->
   DOTDOT: 'DOTDOT',       // .. (range)
+  DOT: 'DOT',             // . (member access)
   
   // Special
   EOF: 'EOF',
@@ -96,8 +117,19 @@ const KEYWORDS = {
   'request': TokenType.REQUEST,
   'service': TokenType.SERVICE,
   'int': TokenType.INT,
+  'float': TokenType.FLOAT,
   'string': TokenType.STRING,
   'bool': TokenType.BOOL,
+  'thread': TokenType.THREAD,
+  'spawn': TokenType.SPAWN,
+  'join': TokenType.JOIN,
+  'print': TokenType.PRINT,
+  'input': TokenType.INPUT,
+  'as': TokenType.AS,
+  'sqrt': TokenType.SQRT,
+  'pow': TokenType.POW,
+  'shared': TokenType.SHARED,
+  'atomic': TokenType.ATOMIC,
   'true': TokenType.TRUE,
   'false': TokenType.FALSE,
 };
@@ -216,10 +248,15 @@ class Lexer {
       this.advance();
       return new Token(TokenType.ARROW, '->', startLine, startColumn);
     }
-    if (ch === '.' && this.peek(1) === '.') {
-      this.advance();
-      this.advance();
-      return new Token(TokenType.DOTDOT, '..', startLine, startColumn);
+    if (ch === '.') {
+      if (this.peek(1) === '.') {
+        this.advance();
+        this.advance();
+        return new Token(TokenType.DOTDOT, '..', startLine, startColumn);
+      } else {
+        this.advance();
+        return new Token(TokenType.DOT, '.', startLine, startColumn);
+      }
     }
     if (ch === '&' && this.peek(1) === '&') {
       this.advance();
@@ -333,6 +370,7 @@ class Lexer {
   
   readNumber(startLine, startColumn) {
     let value = '';
+    let isFloat = false;
     
     if (this.current() === '-') {
       value += '-';
@@ -344,6 +382,38 @@ class Lexer {
       this.advance();
     }
     
+    // Check for decimal point
+    if (this.current() === '.' && this.isDigit(this.peek(1))) {
+      isFloat = true;
+      value += '.';
+      this.advance();
+      
+      while (this.pos < this.source.length && this.isDigit(this.current())) {
+        value += this.current();
+        this.advance();
+      }
+    }
+    
+    // Check for exponent
+    if (this.current() === 'e' || this.current() === 'E') {
+      isFloat = true;
+      value += this.current();
+      this.advance();
+      
+      if (this.current() === '+' || this.current() === '-') {
+        value += this.current();
+        this.advance();
+      }
+      
+      while (this.pos < this.source.length && this.isDigit(this.current())) {
+        value += this.current();
+        this.advance();
+      }
+    }
+    
+    if (isFloat) {
+      return new Token(TokenType.FLOAT_NUMBER, Number.parseFloat(value), startLine, startColumn);
+    }
     return new Token(TokenType.NUMBER, Number.parseInt(value, 10), startLine, startColumn);
   }
   

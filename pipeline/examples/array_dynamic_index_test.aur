@@ -1,0 +1,15 @@
+module test {
+    fn main() -> int {
+        let arr: array<int> = [10, 20, 30, 40, 50];
+        let sum: int = 0;
+        let i: int = 0;
+        
+        while i < 5 {
+            let elem: int = arr[i];
+            sum = sum + elem;
+            i = i + 1;
+        }
+        
+        return sum;
+    }
+}

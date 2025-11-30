@@ -1,0 +1,10 @@
+// sum_inputs.aur - Sum two inputs
+module sum_inputs {
+
+fn main() {
+    let x: int = input();
+    let y: int = input();
+    return x + y;
+}
+
+} // module sum_inputs

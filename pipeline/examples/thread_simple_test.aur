@@ -1,0 +1,12 @@
+// Simple thread test - just spawn and join
+// Expected: 42
+
+fn worker() {
+  // Do nothing
+}
+
+fn main() -> int {
+  let t: thread = spawn worker();
+  join t;
+  return 42;
+}

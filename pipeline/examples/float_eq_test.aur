@@ -1,0 +1,14 @@
+module test {
+    fn main() -> int {
+        let x: float = 5.5;
+        let z: float = 5.5;
+        let result: int = 0;
+        
+        // Test equality
+        if x == z {
+            result = 77;
+        }
+        
+        return result;
+    }
+}

@@ -1,0 +1,14 @@
+// Test: spawn empty worker, check shared var stays at 0
+// Expected: 0
+
+shared counter: int = 0;
+
+fn worker() {
+  // Empty - do nothing
+}
+
+fn main() -> int {
+  let t1: thread = spawn worker();
+  join t1;
+  return atomic.load(counter);
+}

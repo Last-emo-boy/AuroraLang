@@ -1,0 +1,20 @@
+// Array test - basic array operations
+// Test: create array, access elements, sum them
+// Expected exit code: 15 (1 + 2 + 3 + 4 + 5)
+
+module test {
+    fn main() -> int {
+        let arr: array<int> = [1, 2, 3, 4, 5];
+        
+        // Access each element and sum them
+        let a: int = arr[0];
+        let b: int = arr[1];
+        let c: int = arr[2];
+        let d: int = arr[3];
+        let e: int = arr[4];
+        
+        let sum: int = a + b + c + d + e;
+        
+        return sum;
+    }
+}

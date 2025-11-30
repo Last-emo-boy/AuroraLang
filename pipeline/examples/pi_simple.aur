@@ -1,0 +1,30 @@
+// Machin's formula: pi/4 = 4*arctan(1/5) - arctan(1/239)
+
+fn main() {
+    let x: float = 0.2;
+    let xsq: float = x * x;
+    let term: float = x;
+    let sum: float = x;
+    let n: float = 3.0;
+    
+    // arctan(1/5) with 25 iterations
+    while n < 55.0 {
+        term = term * xsq;
+        let contrib: float = term / n;
+        if n < 27.0 {
+            sum = sum - contrib;
+        } else {
+            sum = sum + contrib;
+        }
+        n = n + 2.0;
+    }
+    
+    sum = sum * 16.0;  // 4 * 4 * arctan(1/5)
+    
+    // Subtract 4*arctan(1/239)
+    let y: float = 0.00418410041841;
+    sum = sum - 4.0 * y;
+    
+    print(sum);
+    return 0;
+}

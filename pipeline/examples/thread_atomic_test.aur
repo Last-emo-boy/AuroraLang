@@ -1,0 +1,14 @@
+// Test: single spawned thread adds to shared variable
+// Expected: 5
+
+shared counter: int = 0;
+
+fn worker() {
+  atomic.add(counter, 5);
+}
+
+fn main() -> int {
+  let t: thread = spawn worker();
+  join t;
+  return atomic.load(counter);
+}

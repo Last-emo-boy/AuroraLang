@@ -1,6 +1,9 @@
 # Aurora minimal ISA manifest (Stage N1 pipeline output)
 # Generated from: C:\Users\w33d\Documents\GitHub\AuroraLang\pipeline\examples\hello_world.aur
 
+# Stack frame size: 104 bytes
+stack_size 104
+
 bytes 0x07FE000000000000  ; jmp fn_main ; entry point
 bytes 0x0101FE0000000000  ; mov r1, @str_0 ; message
 bytes 0x0B01010000000000  ; svc 0x01

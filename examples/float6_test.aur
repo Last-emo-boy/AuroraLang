@@ -1,0 +1,23 @@
+module demo {
+    fn main() -> int {
+        // Test 6 floats - no spilling needed
+        let a: float = 1.0;
+        let b: float = 2.0;
+        let c: float = 3.0;
+        let d: float = 4.0;
+        let e: float = 5.0;
+        let f: float = 6.0;
+        
+        // Simple sum
+        let sum: float = a + b;
+        sum = sum + c;
+        sum = sum + d;
+        sum = sum + e;
+        sum = sum + f;
+        
+        request service print_float(sum);
+        
+        request service exit(42);
+        return 42;
+    }
+}

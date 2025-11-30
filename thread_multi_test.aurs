@@ -1,0 +1,22 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: .\pipeline\examples\thread_multi_test.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0106FF000000000A  ; mov r6, #10
+bytes 0x0100060000000000  ; mov r0, r6 ; return value
+bytes 0x0A00000000000000  ; ret ; return from function
+bytes 0x0106FF0000000014  ; mov r6, #20
+bytes 0x0100060000000000  ; mov r0, r6 ; return value
+bytes 0x0A00000000000000  ; ret ; return from function
+bytes 0x3001FE0000000000  ; spawn r1, worker1 ; t1 = spawn worker1()
+bytes 0x3002FE0000000000  ; spawn r2, worker2 ; t2 = spawn worker2()
+bytes 0x3101000000000000  ; join r1 ; join t1
+bytes 0x3102000000000000  ; join r2 ; join t2
+bytes 0x0106FF000000001E  ; mov r6, #30
+bytes 0x0100060000000000  ; mov r0, r6 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_worker1 1
+label fn_worker2 4
+label fn_main 7

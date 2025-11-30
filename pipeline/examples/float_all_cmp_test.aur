@@ -1,0 +1,44 @@
+// Float All Comparisons Test
+// Tests all 6 comparison operators with floats
+// Expected exit code: 63 (all 6 tests pass, each adds a power of 2)
+
+module test {
+    fn main() -> int {
+        let res: int = 0;
+        let a: float = 5.5;
+        let b: float = 3.5;
+        let c: float = 5.5;
+        
+        // Test 1: > (greater than) - 5.5 > 3.5 should be true
+        if a > b {
+            res = res + 1;
+        }
+        
+        // Test 2: < (less than) - 3.5 < 5.5 should be true
+        if b < a {
+            res = res + 2;
+        }
+        
+        // Test 3: >= (greater or equal) - 5.5 >= 3.5 should be true
+        if a >= b {
+            res = res + 4;
+        }
+        
+        // Test 4: <= (less or equal) - 3.5 <= 5.5 should be true
+        if b <= a {
+            res = res + 8;
+        }
+        
+        // Test 5: == (equal) - 5.5 == 5.5 should be true
+        if a == c {
+            res = res + 16;
+        }
+        
+        // Test 6: != (not equal) - 5.5 != 3.5 should be true
+        if a != b {
+            res = res + 32;
+        }
+        
+        return res;
+    }
+}

@@ -1,0 +1,13 @@
+fn main() {
+    let x: float = 2.0;
+    let result: float = sqrt(x);
+    print(result);
+    
+    let four: float = 4.0;
+    print(sqrt(four));
+    
+    let nine: float = 9.0;
+    print(sqrt(nine));
+    
+    return 0;
+}

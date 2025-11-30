@@ -1,0 +1,14 @@
+// Minimal test: spawn worker that sets a simple variable
+// Expected: 42
+
+shared x: int = 0;
+
+fn worker() {
+  atomic.add(x, 42);
+}
+
+fn main() -> int {
+  let t: thread = spawn worker();
+  join t;
+  return atomic.load(x);
+}

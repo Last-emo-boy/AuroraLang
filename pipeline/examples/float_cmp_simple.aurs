@@ -1,0 +1,19 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/float_cmp_simple.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x2000FF0000000000  ; fmov xmm0, 5.5 ; x
+bytes 0x4016000000000000  ;   ; float64 5.5
+bytes 0x2001FF0000000000  ; fmov xmm1, 3.5 ; y
+bytes 0x400C000000000000  ;   ; float64 3.5
+bytes 0x0101FF0000000000  ; mov r1, #0 ; result
+bytes 0x2500010000000000  ; fcmp xmm0, xmm1
+bytes 0x0804FE0000000000  ; cjmp (negated >), endif_1
+bytes 0x0106FF000000002A  ; mov r6, #42
+bytes 0x0101060000000000  ; mov r1, r6 ; result = ...
+bytes 0x0100010000000000  ; mov r0, r1 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1
+label endif_1 10

@@ -1,0 +1,29 @@
+// io_test.aur - Basic I/O test program
+// Tests print(int) and print(string) functionality
+
+module io_test {
+
+fn main() {
+    // Test print string
+    print("Hello, Aurora!");
+    
+    // Test print integer literal
+    print(42);
+    
+    // Test print variable
+    let x: int = 100;
+    print(x);
+    
+    // Test print expression
+    let a: int = 10;
+    let b: int = 20;
+    print(a + b);
+    
+    // Test negative number
+    let neg: int = -123;
+    print(neg);
+    
+    return 0;
+}
+
+} // module io_test

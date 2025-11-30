@@ -1,0 +1,34 @@
+// io_demo.aur - Demonstrate Aurora I/O capabilities
+module io_demo {
+
+fn main() {
+    // String printing
+    print("=== Aurora I/O Demo ===");
+    
+    // Integer literals
+    print(42);
+    print(0);
+    print(12345);
+    
+    // Negative numbers
+    print(-1);
+    print(-999);
+    
+    // Variables
+    let x: int = 100;
+    let y: int = 200;
+    print(x);
+    print(y);
+    
+    // Expressions
+    print(x + y);       // 300
+    print(x * 3);       // 300
+    print(y - x);       // 100
+    
+    // Done
+    print("=== Demo Complete ===");
+    
+    return 0;
+}
+
+} // module io_demo

@@ -1,0 +1,31 @@
+module test {
+    fn main() -> int {
+        let x: float = 5.5;
+        let y: float = 3.5;
+        let result: int = 0;
+        
+        // Test greater than
+        if x > y {
+            result = 10;
+        }
+        
+        // Test less than
+        if y < x {
+            result = result + 5;
+        }
+        
+        // Test greater than or equal
+        let z: float = 5.5;
+        if x >= z {
+            result = result + 3;
+        }
+        
+        // Test equality
+        if x == z {
+            result = result + 2;
+        }
+        
+        // Expected: 10 + 5 + 3 + 2 = 20
+        return result;
+    }
+}

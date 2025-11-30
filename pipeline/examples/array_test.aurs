@@ -1,0 +1,37 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/array_test.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0106FF0000000001  ; mov r6, #1 ; arr[0]
+bytes 0x1600FF0000000006  ; store [slot 0], r6 ; arr[0] = 1
+bytes 0x0107FF0000000002  ; mov r7, #2 ; arr[1]
+bytes 0x1601FF0000000007  ; store [slot 1], r7 ; arr[1] = 2
+bytes 0x0106FF0000000003  ; mov r6, #3 ; arr[2]
+bytes 0x1602FF0000000006  ; store [slot 2], r6 ; arr[2] = 3
+bytes 0x0107FF0000000004  ; mov r7, #4 ; arr[3]
+bytes 0x1603FF0000000007  ; store [slot 3], r7 ; arr[3] = 4
+bytes 0x0106FF0000000005  ; mov r6, #5 ; arr[4]
+bytes 0x1604FF0000000006  ; store [slot 4], r6 ; arr[4] = 5
+bytes 0x0107FF0000000000  ; mov r7, #0 ; array base slot
+bytes 0x1706FF0000000000  ; load r6, [slot 0] ; arr[0]
+bytes 0x0101060000000000  ; mov r1, r6 ; a = arr[...]
+bytes 0x1706FF0000000001  ; load r6, [slot 1] ; arr[1]
+bytes 0x0102060000000000  ; mov r2, r6 ; b = arr[...]
+bytes 0x1706FF0000000002  ; load r6, [slot 2] ; arr[2]
+bytes 0x0103060000000000  ; mov r3, r6 ; c = arr[...]
+bytes 0x1706FF0000000003  ; load r6, [slot 3] ; arr[3]
+bytes 0x0104060000000000  ; mov r4, r6 ; d = arr[...]
+bytes 0x1706FF0000000004  ; load r6, [slot 4] ; arr[4]
+bytes 0x0105060000000000  ; mov r5, r6 ; e = arr[...]
+bytes 0x0106010000000000  ; mov r6, r1
+bytes 0x0406060200000000  ; add r6, r6, r2
+bytes 0x0406060300000000  ; add r6, r6, r3
+bytes 0x0406060400000000  ; add r6, r6, r4
+bytes 0x0406060500000000  ; add r6, r6, r5
+bytes 0x1601FF0000000020  ; store r1 -> [RSP+32] ; spill a
+bytes 0x0101060000000000  ; mov r1, r6 ; sum
+bytes 0x0100010000000000  ; mov r0, r1 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1

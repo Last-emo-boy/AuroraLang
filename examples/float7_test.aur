@@ -1,0 +1,18 @@
+module demo {
+    fn main() -> int {
+        // Simplest test with 7 float variables
+        let a: float = 1.0;
+        let b: float = 2.0;
+        let c: float = 3.0;
+        let d: float = 4.0;
+        let e: float = 5.0;
+        let f: float = 6.0;
+        let g: float = 7.0;  // 7th variable - needs spilling
+        
+        // Just print g directly
+        request service print_float(g);
+        
+        request service exit(0);
+        return 0;
+    }
+}

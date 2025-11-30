@@ -1,0 +1,10 @@
+// Two prints test
+fn main() -> int {
+    let a: float = 5.5;
+    let b: float = 2.5;
+    let sum: float = a + b;
+    let diff: float = a - b;
+    print(sum);
+    print(diff);
+    return 0;
+}

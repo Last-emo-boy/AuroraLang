@@ -1,0 +1,47 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: pipeline/examples/io_demo.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0101FE0000000000  ; mov r1, @str_0
+bytes 0x0B01010000000000  ; svc 0x01
+bytes 0x0100FF000000002A  ; mov r0, #42
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0100FF0000000000  ; mov r0, #0
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0100FF0000003039  ; mov r0, #12345
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0100FF00FFFFFFFF  ; mov r0, #-1
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0100FF00FFFFFC19  ; mov r0, #-999
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0101FF0000000064  ; mov r1, #100 ; x
+bytes 0x0102FF00000000C8  ; mov r2, #200 ; y
+bytes 0x0100010000000000  ; mov r0, r1
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0100020000000000  ; mov r0, r2
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0106010000000000  ; mov r6, r1
+bytes 0x0406060200000000  ; add r6, r6, r2
+bytes 0x0100060000000000  ; mov r0, r6
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0107010000000000  ; mov r7, r1
+bytes 0x0D0707FF00000003  ; mul r7, r7, #3
+bytes 0x0100070000000000  ; mov r0, r7
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0106020000000000  ; mov r6, r2
+bytes 0x0506060100000000  ; sub r6, r6, r1
+bytes 0x0100060000000000  ; mov r0, r6
+bytes 0x0B05000000000000  ; svc 0x05
+bytes 0x0101FE0000000000  ; mov r1, @str_1
+bytes 0x0B01010000000000  ; svc 0x01
+bytes 0x0107FF0000000000  ; mov r7, #0
+bytes 0x0100070000000000  ; mov r0, r7 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1
+
+label str_0 37
+string "=== Aurora I/O Demo ==="
+label str_1 37
+string "=== Demo Complete ==="

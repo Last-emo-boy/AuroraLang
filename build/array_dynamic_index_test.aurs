@@ -1,0 +1,30 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/array_dynamic_index_test.aur
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0106FF000000000A  ; mov r6, #10 ; arr[0]
+bytes 0x1606FF0000000020  ; store [RSP+32], r6 ; arr[0] = 10
+bytes 0x0107FF0000000014  ; mov r7, #20 ; arr[1]
+bytes 0x1607FF0000000028  ; store [RSP+40], r7 ; arr[1] = 20
+bytes 0x0106FF000000001E  ; mov r6, #30 ; arr[2]
+bytes 0x1606FF0000000030  ; store [RSP+48], r6 ; arr[2] = 30
+bytes 0x0107FF0000000028  ; mov r7, #40 ; arr[3]
+bytes 0x1607FF0000000038  ; store [RSP+56], r7 ; arr[3] = 40
+bytes 0x0106FF0000000032  ; mov r6, #50 ; arr[4]
+bytes 0x1606FF0000000040  ; store [RSP+64], r6 ; arr[4] = 50
+bytes 0x0101FF0000000000  ; mov r1, #0 ; sum
+bytes 0x0102FF0000000000  ; mov r2, #0 ; i
+bytes 0x1A07000200000000  ; array_load r7, [base 0 + r2] ; arr[...]
+bytes 0x0103070000000000  ; mov r3, r7 ; elem = arr[...]
+bytes 0x0401010300000000  ; add r1, r1, r3
+bytes 0x040202FF00000001  ; add r2, r2, #1
+bytes 0x0602FF0000000005  ; cmp r2, #5
+bytes 0x0801FE0000000000  ; cjmp eq, exit_1
+bytes 0x07FE000000000000  ; jmp loop_0
+bytes 0x0100010000000000  ; mov r0, r1 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1
+label loop_0 13
+label exit_1 20

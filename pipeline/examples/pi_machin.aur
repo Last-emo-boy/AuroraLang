@@ -1,0 +1,44 @@
+// Machin's formula: pi/4 = 4*arctan(1/5) - arctan(1/239)
+// arctan(x) = x - x^3/3 + x^5/5 - ...
+
+fn main() {
+    // Variables: x, term, sum, n, sign (5 vars, fits in xmm0-xmm4)
+    let x: float = 0.2;
+    let term: float = x;
+    let sum: float = x;
+    let n: float = 3.0;
+    let sign: float = -1.0;
+    
+    // arctan(1/5): 25 iterations is enough for double precision
+    while n < 55.0 {
+        term = term * x * x;
+        sum = sum + sign * term / n;
+        sign = sign * -1.0;
+        n = n + 2.0;
+    }
+    
+    // Save 4*arctan(1/5) in sum
+    sum = sum * 4.0;
+    
+    // arctan(1/239): very few iterations needed
+    x = 0.00418410041841;
+    term = x;
+    n = 3.0;
+    sign = -1.0;
+    
+    // Subtract arctan(1/239) from 4*arctan(1/5)
+    sum = sum - x;  // First term of arctan
+    
+    while n < 15.0 {
+        term = term * x * x;
+        sum = sum - sign * term / n;
+        sign = sign * -1.0;
+        n = n + 2.0;
+    }
+    
+    // pi = 4 * result
+    sum = sum * 4.0;
+    print(sum);
+    
+    return 0;
+}

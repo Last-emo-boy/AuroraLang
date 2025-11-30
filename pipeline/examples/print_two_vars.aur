@@ -1,0 +1,12 @@
+// print_two_vars.aur - Print two variables
+module print_two_vars {
+
+fn main() {
+    let x: int = 100;
+    let y: int = 200;
+    print(x);
+    print(y);
+    return 0;
+}
+
+} // module print_two_vars

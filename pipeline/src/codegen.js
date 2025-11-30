@@ -40,6 +40,30 @@ const ISA = {
     // Stack frame operations
     STORE_STACK: 0x16,  // Store reg to [RSP+offset]
     LOAD_STACK: 0x17,   // Load reg from [RSP+offset]
+    // Array operations
+    ARRAY_ALLOC: 0x18,  // Allocate array on stack: dest_reg, size
+    ARRAY_STORE: 0x19,  // Store to array: array_base_slot, index_reg, value_reg
+    ARRAY_LOAD: 0x1a,   // Load from array: dest_reg, array_base_slot, index_reg
+    // Floating point operations (use XMM registers)
+    FMOV: 0x20,   // Move float: dest_xmm, src_xmm/imm64
+    FADD: 0x21,   // Float add: dest_xmm, src1_xmm, src2_xmm
+    FSUB: 0x22,   // Float sub: dest_xmm, src1_xmm, src2_xmm
+    FMUL: 0x23,   // Float mul: dest_xmm, src1_xmm, src2_xmm
+    FDIV: 0x24,   // Float div: dest_xmm, src1_xmm, src2_xmm
+    FCMP: 0x25,   // Float compare: xmm1, xmm2
+    FLOAD: 0x26,  // Load float from stack: dest_xmm, [RSP+offset]
+    FSTORE: 0x27, // Store float to stack: [RSP+offset], src_xmm
+    CVTSI2SD: 0x28, // Convert int to float: dest_xmm, src_reg
+    CVTSD2SI: 0x29, // Convert float to int: dest_reg, src_xmm
+    FSQRT: 0x2A,  // Float square root: dest_xmm, src_xmm
+    // Thread operations
+    SPAWN: 0x30,  // Spawn thread: dest_reg (handle), func_label
+    JOIN: 0x31,   // Join thread: handle_reg
+    // Atomic/shared memory operations
+    ATOMIC_LOAD: 0x32,   // Atomic load: dest_reg, shared_var_id
+    ATOMIC_STORE: 0x33,  // Atomic store: shared_var_id, src_reg
+    ATOMIC_ADD: 0x34,    // Atomic add: shared_var_id, src_reg (adds src to shared)
+    ATOMIC_FADD: 0x35,   // Atomic float add: shared_var_id, src_xmm
   },
   OPERAND: {
     UNUSED: 0x00,
@@ -256,6 +280,104 @@ function encodeRet() {
 }
 
 // =============================================================================
+// Floating Point Instruction Encoding
+// =============================================================================
+
+// Pack float64 into two 32-bit values for instruction encoding
+function packFloat64(value) {
+  const buffer = new ArrayBuffer(8);
+  const view = new DataView(buffer);
+  view.setFloat64(0, value, true);  // little-endian
+  return {
+    lo: view.getUint32(0, true),
+    hi: view.getUint32(4, true)
+  };
+}
+
+// FMOV with immediate: load float constant to XMM register
+// Uses two instructions: first loads low 32 bits, second loads high 32 bits
+function encodeFMovImm(destXmm, floatValue) {
+  const { lo, hi } = packFloat64(floatValue);
+  // Pack: opcode=FMOV, op0=destXmm, op1=IMMEDIATE, op2=hi (8bits), imm32=lo
+  return packInstruction(ISA.OPCODE.FMOV, destXmm, ISA.OPERAND.IMMEDIATE, hi & 0xFF, lo);
+}
+
+// Extended FMOV encoding that includes full 64-bit float
+// Returns an array with instruction and float data word
+function encodeFMovImmFull(destXmm, floatValue) {
+  // Encode the instruction with a marker (operand = 0xFF means load from next word)
+  const instruction = packInstruction(ISA.OPCODE.FMOV, destXmm, 0xFF, ISA.OPERAND.UNUSED, 0);
+  
+  // Encode the float value as a 64-bit hex string
+  const buffer = new ArrayBuffer(8);
+  const view = new DataView(buffer);
+  view.setFloat64(0, floatValue, true);  // little-endian
+  
+  // Build the hex string for the 64-bit float
+  let floatHex = '0x';
+  for (let i = 7; i >= 0; i--) {
+    floatHex += view.getUint8(i).toString(16).padStart(2, '0').toUpperCase();
+  }
+  
+  return { instruction, floatData: floatHex };
+}
+
+function encodeFMovReg(destXmm, srcXmm) {
+  return packInstruction(ISA.OPCODE.FMOV, destXmm, srcXmm, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeFAddReg(destXmm, src1Xmm, src2Xmm) {
+  return packInstruction(ISA.OPCODE.FADD, destXmm, src1Xmm, src2Xmm, 0);
+}
+
+function encodeFSubReg(destXmm, src1Xmm, src2Xmm) {
+  return packInstruction(ISA.OPCODE.FSUB, destXmm, src1Xmm, src2Xmm, 0);
+}
+
+function encodeFMulReg(destXmm, src1Xmm, src2Xmm) {
+  return packInstruction(ISA.OPCODE.FMUL, destXmm, src1Xmm, src2Xmm, 0);
+}
+
+function encodeFDivReg(destXmm, src1Xmm, src2Xmm) {
+  return packInstruction(ISA.OPCODE.FDIV, destXmm, src1Xmm, src2Xmm, 0);
+}
+
+function encodeFCmp(xmm1, xmm2) {
+  return packInstruction(ISA.OPCODE.FCMP, xmm1, xmm2, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeFLoad(destXmm, stackOffset) {
+  return packInstruction(ISA.OPCODE.FLOAD, destXmm, ISA.OPERAND.UNUSED, ISA.OPERAND.UNUSED, stackOffset);
+}
+
+function encodeFStore(stackOffset, srcXmm) {
+  return packInstruction(ISA.OPCODE.FSTORE, srcXmm, ISA.OPERAND.UNUSED, ISA.OPERAND.UNUSED, stackOffset);
+}
+
+function encodeCvtSI2SD(destXmm, srcReg) {
+  return packInstruction(ISA.OPCODE.CVTSI2SD, destXmm, srcReg, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeCvtSD2SI(destReg, srcXmm) {
+  return packInstruction(ISA.OPCODE.CVTSD2SI, destReg, srcXmm, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeFSqrt(destXmm, srcXmm) {
+  return packInstruction(ISA.OPCODE.FSQRT, destXmm, srcXmm, ISA.OPERAND.UNUSED, 0);
+}
+
+// Thread operations
+function encodeSpawn(destReg, funcLabel) {
+  // SPAWN dest_reg, label (label is encoded separately in comment)
+  return packInstruction(ISA.OPCODE.SPAWN, destReg, ISA.OPERAND.LABEL, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeJoin(handleReg) {
+  // JOIN handle_reg
+  return packInstruction(ISA.OPCODE.JOIN, handleReg, ISA.OPERAND.UNUSED, ISA.OPERAND.UNUSED, 0);
+}
+
+// =============================================================================
 // Code Generation Context
 // =============================================================================
 
@@ -270,6 +392,294 @@ class CodeGenContext {
     this.currentFunction = null; // Track which function we're generating
     this.loopStack = [];         // Stack of loop contexts for break/continue
     this.stackFrameSize = 0;     // Size of stack frame for spilled variables
+    
+    // Array support
+    this.arrayBaseSlots = new Map(); // Map array name to base slot number
+    this.nextArraySlot = 0;          // Next available slot for array allocation
+    this.nextArrayId = 0;            // For generating anonymous array names
+    this.currentArrayName = null;    // Name of array being initialized
+    
+    // Float support - XMM register allocation with spilling
+    this.floatVars = new Map();          // Map float var name to XMM reg (if in register)
+    this.floatVarsOnStack = new Map();   // Map float var name to stack offset (if spilled)
+    this.floatRegToVar = new Map();      // Map XMM register to var name
+    this.floatAccessOrder = [];          // LRU tracking (oldest first)
+    this.floatInitialized = new Set();   // Float vars that have been assigned
+    this.nextFloatStackOffset = 0;       // Next stack offset for float spill (after int spills)
+    this.floatTemps = [false, false, false, false]; // xmm8-xmm11 for temp use (or use stack)
+    this.floatConstants = new Map();     // Map float value to data label
+    this.nextFloatConstId = 0;           // For naming float constants
+    
+    // XMM register pool: xmm0-xmm5 for variables, xmm6-xmm7 for temps (more temps below)
+    this.FLOAT_VAR_REGS = [0, 1, 2, 3, 4, 5];  // 6 registers for float variables
+    this.FLOAT_TEMP_REGS = [6, 7];              // 2 permanent temp registers
+    
+    // Shared variable support
+    this.sharedVars = new Map();     // Map shared var name to { id, type, initialValue }
+    this.nextSharedId = 0;           // Next available shared var ID
+    
+    // Pending float spill instructions
+    this.pendingFloatSpills = [];
+  }
+  
+  // Register a shared variable
+  registerSharedVar(name, type, initialValue) {
+    if (this.sharedVars.has(name)) {
+      throw new Error(`Shared variable already declared: ${name}`);
+    }
+    const id = this.nextSharedId++;
+    this.sharedVars.set(name, { id, type, initialValue });
+    return id;
+  }
+  
+  getSharedVarId(name) {
+    if (!this.sharedVars.has(name)) {
+      throw new Error(`Unknown shared variable: ${name}`);
+    }
+    return this.sharedVars.get(name).id;
+  }
+  
+  getSharedVarInfo(name) {
+    return this.sharedVars.get(name);
+  }
+  
+  isSharedVar(name) {
+    return this.sharedVars.has(name);
+  }
+  
+  // Allocate XMM register for float variable (with spilling support)
+  allocFloatRegister(varName) {
+    // If already in a register, return it
+    if (this.floatVars.has(varName)) {
+      this._updateFloatAccessOrder(varName);
+      return this.floatVars.get(varName);
+    }
+    
+    // If on stack, get a register (for re-assignment)
+    if (this.floatVarsOnStack.has(varName)) {
+      return this._getFloatRegForAssignment(varName);
+    }
+    
+    // New variable - try to find a free register
+    for (const xmm of this.FLOAT_VAR_REGS) {
+      if (!this.floatRegToVar.has(xmm)) {
+        this._assignFloatVarToReg(varName, xmm);
+        return xmm;
+      }
+    }
+    
+    // No free registers - need to evict (spill) something
+    return this._evictAndAllocateFloat(varName);
+  }
+  
+  // Get XMM register for reading a float variable
+  getFloatRegister(varName) {
+    // If in register, return it
+    if (this.floatVars.has(varName)) {
+      this._updateFloatAccessOrder(varName);
+      return this.floatVars.get(varName);
+    }
+    
+    // If on stack, reload it
+    if (this.floatVarsOnStack.has(varName)) {
+      return this._reloadFloatVariable(varName);
+    }
+    
+    throw new Error(`Float variable not allocated: ${varName}`);
+  }
+  
+  // Mark float variable as initialized
+  markFloatInitialized(varName) {
+    this.floatInitialized.add(varName);
+  }
+  
+  // Get a register for assigning to a float variable (doesn't reload)
+  _getFloatRegForAssignment(varName) {
+    for (const xmm of this.FLOAT_VAR_REGS) {
+      if (!this.floatRegToVar.has(xmm)) {
+        this.floatVarsOnStack.delete(varName);
+        this._assignFloatVarToReg(varName, xmm);
+        return xmm;
+      }
+    }
+    return this._evictAndAllocateFloat(varName);
+  }
+  
+  // Evict LRU float variable and allocate to new variable
+  _evictAndAllocateFloat(varName) {
+    // Find LRU initialized variable to spill
+    let victimVar = null;
+    let victimXmm = null;
+    
+    for (const v of this.floatAccessOrder) {
+      if (this.floatVars.has(v) && this.floatInitialized.has(v)) {
+        victimVar = v;
+        victimXmm = this.floatVars.get(v);
+        break;
+      }
+    }
+    
+    // If no initialized var, try any variable
+    if (!victimVar) {
+      for (const v of this.floatAccessOrder) {
+        if (this.floatVars.has(v)) {
+          victimVar = v;
+          victimXmm = this.floatVars.get(v);
+          break;
+        }
+      }
+    }
+    
+    if (!victimVar) {
+      throw new Error(`Cannot allocate XMM for '${varName}': no evictable variables`);
+    }
+    
+    // Spill victim if initialized
+    if (this.floatInitialized.has(victimVar)) {
+      if (!this.floatVarsOnStack.has(victimVar)) {
+        // Assign new stack slot (after int vars, starting at offset 200)
+        const stackOffset = 200 + this.nextFloatStackOffset * 8;
+        this.floatVarsOnStack.set(victimVar, stackOffset);
+        this.nextFloatStackOffset++;
+      }
+      const stackOffset = this.floatVarsOnStack.get(victimVar);
+      
+      // Emit FSTORE instruction
+      this.emitInstruction(
+        encodeFStore(stackOffset, victimXmm),
+        `fstore [RSP+${stackOffset}], xmm${victimXmm} ; spill ${victimVar}`
+      );
+    }
+    
+    // Remove victim from register
+    this.floatVars.delete(victimVar);
+    this.floatRegToVar.delete(victimXmm);
+    
+    // Assign to new variable
+    this._assignFloatVarToReg(varName, victimXmm);
+    this.floatVarsOnStack.delete(varName);
+    
+    return victimXmm;
+  }
+  
+  // Reload float variable from stack
+  _reloadFloatVariable(varName) {
+    // Find a free register
+    let targetXmm = null;
+    for (const xmm of this.FLOAT_VAR_REGS) {
+      if (!this.floatRegToVar.has(xmm)) {
+        targetXmm = xmm;
+        break;
+      }
+    }
+    
+    // If no free register, evict something
+    if (targetXmm === null) {
+      let victimVar = null;
+      
+      // Prefer uninitialized
+      for (const v of this.floatAccessOrder) {
+        if (this.floatVars.has(v) && !this.floatInitialized.has(v)) {
+          victimVar = v;
+          break;
+        }
+      }
+      
+      // Or LRU initialized (not the one we're reloading)
+      if (!victimVar) {
+        for (const v of this.floatAccessOrder) {
+          if (this.floatVars.has(v) && v !== varName) {
+            victimVar = v;
+            break;
+          }
+        }
+      }
+      
+      if (!victimVar) {
+        throw new Error(`Cannot reload float '${varName}': no evictable variables`);
+      }
+      
+      targetXmm = this.floatVars.get(victimVar);
+      
+      // Spill victim if initialized
+      if (this.floatInitialized.has(victimVar)) {
+        if (!this.floatVarsOnStack.has(victimVar)) {
+          const stackOffset = 200 + this.nextFloatStackOffset * 8;
+          this.floatVarsOnStack.set(victimVar, stackOffset);
+          this.nextFloatStackOffset++;
+        }
+        const stackOffset = this.floatVarsOnStack.get(victimVar);
+        
+        this.emitInstruction(
+          encodeFStore(stackOffset, targetXmm),
+          `fstore [RSP+${stackOffset}], xmm${targetXmm} ; spill ${victimVar}`
+        );
+      }
+      
+      this.floatVars.delete(victimVar);
+      this.floatRegToVar.delete(targetXmm);
+    }
+    
+    // Reload from stack
+    const stackOffset = this.floatVarsOnStack.get(varName);
+    this.emitInstruction(
+      encodeFLoad(targetXmm, stackOffset),
+      `fload xmm${targetXmm}, [RSP+${stackOffset}] ; reload ${varName}`
+    );
+    
+    // Update tracking
+    this.floatVarsOnStack.delete(varName);
+    this._assignFloatVarToReg(varName, targetXmm);
+    
+    return targetXmm;
+  }
+  
+  // Helper: assign float var to XMM register
+  _assignFloatVarToReg(varName, xmm) {
+    this.floatVars.set(varName, xmm);
+    this.floatRegToVar.set(xmm, varName);
+    this._updateFloatAccessOrder(varName);
+  }
+  
+  // Helper: update LRU order
+  _updateFloatAccessOrder(varName) {
+    const idx = this.floatAccessOrder.indexOf(varName);
+    if (idx !== -1) {
+      this.floatAccessOrder.splice(idx, 1);
+    }
+    this.floatAccessOrder.push(varName);
+  }
+  
+  // Check if variable is a float (in register or on stack)
+  hasFloatVar(varName) {
+    return this.floatVars.has(varName) || this.floatVarsOnStack.has(varName);
+  }
+  
+  allocFloatTemp() {
+    if (!this.floatTemps[0]) {
+      this.floatTemps[0] = true;
+      return 6;  // xmm6
+    }
+    if (!this.floatTemps[1]) {
+      this.floatTemps[1] = true;
+      return 7;  // xmm7
+    }
+    throw new Error('Out of float temp registers');
+  }
+  
+  releaseFloatTemp(xmm) {
+    if (xmm === 6) this.floatTemps[0] = false;
+    if (xmm === 7) this.floatTemps[1] = false;
+  }
+  
+  // Get or create a float constant in data section
+  getFloatConstant(value) {
+    if (this.floatConstants.has(value)) {
+      return this.floatConstants.get(value);
+    }
+    const label = `fconst_${this.nextFloatConstId++}`;
+    this.floatConstants.set(value, label);
+    return label;
   }
   
   allocRegister(varName) {
@@ -309,11 +719,33 @@ class CodeGenContext {
   
   // Get required stack frame size for function
   getStackFrameSize() {
-    // Shadow space (32 bytes) + spill slots (8 bytes each)
+    // Shadow space (32 bytes) + spill slots (8 bytes each) + array slots (8 bytes each)
+    // Plus float spill area starting at offset 200
     const spillSlots = this.registerAlloc.getStackSize();
-    // Round up to 16-byte alignment
-    const size = 32 + spillSlots * 8;
-    return (size + 15) & ~15;
+    const intSlotsSize = spillSlots + this.nextArraySlot;
+    
+    // Float spill starts at 200, so we need at least 200 bytes + float slots
+    const floatSpillSize = this.nextFloatStackOffset > 0 
+      ? 200 + this.nextFloatStackOffset * 8  
+      : 0;
+    
+    // Take the max of int spill area, float spill area, and minimum 88 bytes
+    // 88 bytes (0x58) is required for syscalls (32 shadow + 56 locals)
+    const minSize = 88;
+    const size = Math.max(minSize, 32 + intSlotsSize * 8, floatSpillSize);
+    
+    // Win64 ABI: Stack must be 16-byte aligned BEFORE a CALL instruction
+    // After CALL, RSP = 16n+8 (return address pushed)
+    // So we need (RSP - stackSize) to be 16-aligned
+    // This means stackSize should be 16n+8
+    // Round up to next 16n+8: ((size + 7) & ~15) + 8
+    // Or equivalently: round up to 16, then add 8 if even multiple
+    const aligned = (size + 15) & ~15;
+    // If aligned is 16n (even multiple of 16), we need 16n+8
+    // If aligned is 16n+8, we're good but should use 16(n+1)+8 = aligned + 8
+    // Actually, let's just ensure it's 8 mod 16:
+    // (aligned | 8) gives us the nearest 16n+8 >= aligned
+    return aligned % 16 === 0 ? aligned + 8 : aligned;
   }
   
   allocTemp() {
@@ -324,8 +756,29 @@ class CodeGenContext {
     this.registerAlloc.releaseTemp(reg);
   }
   
+  // Array slot management
+  allocArraySlots(arrayName, count) {
+    const baseSlot = this.nextArraySlot;
+    this.nextArraySlot += count;
+    this.arrayBaseSlots.set(arrayName, baseSlot);
+    return baseSlot;
+  }
+  
+  getArrayBaseSlot(arrayName) {
+    return this.arrayBaseSlots.get(arrayName);
+  }
+  
   emitInstruction(bytes, comment = '') {
     this.instructions.push({ bytes, comment });
+  }
+  
+  // Emit a float immediate load instruction (requires special handling for 64-bit data)
+  emitFloatLoadImm(destXmm, floatValue, varName = '') {
+    const { instruction, floatData } = encodeFMovImmFull(destXmm, floatValue);
+    // Emit the instruction
+    this.instructions.push({ bytes: instruction, comment: `fmov xmm${destXmm}, ${floatValue} ; ${varName}` });
+    // Emit the float data word immediately after
+    this.instructions.push({ bytes: floatData, comment: `  ; float64 ${floatValue}` });
   }
   
   emitLabel(name) {
@@ -373,6 +826,12 @@ class CodeGenContext {
   resetForFunction() {
     this.registerAlloc = new RegisterAllocator();
     this.loopStack = [];
+    this.arrayBaseSlots = new Map();
+    this.nextArraySlot = 0;
+    // Reset float registers
+    this.floatVars = new Map();
+    this.nextFloatReg = 0;
+    this.floatTemps = [false, false];
   }
 }
 
@@ -426,6 +885,13 @@ function generateModuleProgram(program, ctx) {
     }
   }
   
+  // Register shared variables (from program.sharedVars)
+  if (program.sharedVars) {
+    for (const shared of program.sharedVars) {
+      ctx.registerSharedVar(shared.name, shared.type, shared.value);
+    }
+  }
+  
   // Find main function
   const mainFn = program.declarations.find(d => d.kind === 'fn' && d.name === 'main');
   if (!mainFn) {
@@ -468,14 +934,8 @@ function generateFunction(fnDecl, ctx) {
   // DON'T pre-allocate local variables - let them be allocated on-demand
   // during initialization. This allows proper spilling of initialized vars.
   
-  // Generate local variable initialization (allocation happens here)
-  for (const decl of fnDecl.localDecls) {
-    if (decl.kind === 'let') {
-      generateDeclaration(decl, ctx);
-    }
-  }
-  
-  // Generate function body
+  // Generate function body in source order (statements include let declarations)
+  // This preserves the execution order: arr[0]=10 before let a=arr[0]
   for (const stmt of fnDecl.body.statements) {
     generateStatement(stmt, ctx);
   }
@@ -487,10 +947,18 @@ function generateFunction(fnDecl, ctx) {
       encodeHalt(),
       'halt ; implicit exit'
     );
+  } else {
+    // For non-main functions, add implicit RET if function is void
+    // or if the last statement wasn't a return
+    const lastStmt = fnDecl.body.statements[fnDecl.body.statements.length - 1];
+    if (!lastStmt || lastStmt.kind !== 'return') {
+      ctx.emitInstruction(
+        encodeRet(),
+        'ret ; implicit return'
+      );
+    }
   }
   
-  // Emit implicit return if no explicit return at end
-  // (return instruction will be generated by return statement)
   ctx.currentFunction = null;
 }
 
@@ -498,37 +966,84 @@ function generateDeclaration(decl, ctx) {
   // For complex expressions, we need to evaluate first, then assign to variable
   // This avoids issues where evaluating the expression evicts the target variable
   
+  // Check for type conversion: target type is int but expression is float
+  const exprIsFloat = isFloatExpression(decl.value, ctx);
+  const needsFloatToInt = decl.type === 'int' && exprIsFloat;
+  
+  if (needsFloatToInt) {
+    // Handle implicit float-to-int conversion
+    generateFloatToIntDeclaration(decl, ctx);
+    return;
+  }
+  
+  if (decl.value.kind === 'cast') {
+    // Handle explicit type conversion expression
+    generateCastDeclaration(decl, ctx);
+    return;
+  }
+  
   if (decl.value.kind === 'literal') {
     // Simple case: allocate register and assign directly
-    const reg = ctx.allocRegister(decl.name);
-    if (decl.value.type === 'string') {
-      const label = ctx.addString(decl.value.value);
-      ctx.emitInstruction(
-        encodeMovLabel(reg),
-        `mov r${reg}, @${label} ; ${decl.name}`
-      );
-    } else if (decl.value.type === 'int') {
-      ctx.emitInstruction(
-        encodeMovImmediate(reg, decl.value.value),
-        `mov r${reg}, #${decl.value.value} ; ${decl.name}`
-      );
+    if (decl.value.type === 'float') {
+      // Float literal - use XMM registers
+      const xmm = ctx.allocFloatRegister(decl.name);
+      ctx.emitFloatLoadImm(xmm, decl.value.value, decl.name);
+      ctx.markFloatInitialized(decl.name);
+    } else {
+      // Integer or other type
+      const reg = ctx.allocRegister(decl.name);
+      if (decl.value.type === 'string') {
+        const label = ctx.addString(decl.value.value);
+        ctx.emitInstruction(
+          encodeMovLabel(reg),
+          `mov r${reg}, @${label} ; ${decl.name}`
+        );
+      } else if (decl.value.type === 'int') {
+        ctx.emitInstruction(
+          encodeMovImmediate(reg, decl.value.value),
+          `mov r${reg}, #${decl.value.value} ; ${decl.name}`
+        );
+      }
+      ctx.registerAlloc.markInitialized(decl.name);
     }
-    ctx.registerAlloc.markInitialized(decl.name);
+  } else if (decl.value.kind === 'array_literal') {
+    // Array literal: store elements to stack slots
+    ctx.currentArrayName = decl.name;
+    generateArrayLiteral(decl.value, ctx);
+    ctx.currentArrayName = null;
+    // Array variable itself doesn't need a register - it's addressed by base slot
   } else if (decl.value.kind === 'binary') {
-    // Complex case: evaluate expression into temp first, then assign to variable
-    const tempReg = ctx.allocTemp();
-    generateBinaryInto(decl.value, tempReg, ctx);
+    // Check if this is a float expression
+    const isFloat = isFloatExpression(decl.value, ctx);
     
-    // Now allocate the actual variable register
-    const reg = ctx.allocRegister(decl.name);
-    if (reg !== tempReg) {
-      ctx.emitInstruction(
-        encodeMovRegister(reg, tempReg),
-        `mov r${reg}, r${tempReg} ; ${decl.name}`
-      );
+    if (isFloat) {
+      // Use generateFloatExpr for all float expressions including math_call
+      const tempXmm = generateFloatExpr(decl.value, ctx);
+      const xmm = ctx.allocFloatRegister(decl.name);
+      if (xmm !== tempXmm) {
+        ctx.emitInstruction(
+          encodeFMovReg(xmm, tempXmm),
+          `fmov xmm${xmm}, xmm${tempXmm} ; ${decl.name}`
+        );
+      }
+      if (tempXmm >= 6) ctx.releaseFloatTemp(tempXmm);
+      ctx.markFloatInitialized(decl.name);
+    } else {
+      // Integer binary expression
+      const tempReg = ctx.allocTemp();
+      generateBinaryInto(decl.value, tempReg, ctx);
+      
+      // Now allocate the actual variable register
+      const reg = ctx.allocRegister(decl.name);
+      if (reg !== tempReg) {
+        ctx.emitInstruction(
+          encodeMovRegister(reg, tempReg),
+          `mov r${reg}, r${tempReg} ; ${decl.name}`
+        );
+      }
+      ctx.releaseTemp(tempReg);
+      ctx.registerAlloc.markInitialized(decl.name);
     }
-    ctx.releaseTemp(tempReg);
-    ctx.registerAlloc.markInitialized(decl.name);
   } else if (decl.value.kind === 'call') {
     // Handle function call (e.g., let sum: int = add(x, y))
     const resultReg = generateCallExpr(decl.value, ctx);
@@ -542,22 +1057,355 @@ function generateDeclaration(decl, ctx) {
     ctx.registerAlloc.markInitialized(decl.name);
   } else if (decl.value.kind === 'variable') {
     // Handle variable reference (e.g., let copy: int = original)
-    const srcReg = ctx.getRegister(decl.value.name);
+    // Check if source is float (in register OR on stack)
+    if (ctx.hasFloatVar(decl.value.name)) {
+      const srcXmm = ctx.getFloatRegister(decl.value.name);
+      const xmm = ctx.allocFloatRegister(decl.name);
+      if (srcXmm !== xmm) {
+        ctx.emitInstruction(
+          encodeFMovReg(xmm, srcXmm),
+          `fmov xmm${xmm}, xmm${srcXmm} ; ${decl.name} = ${decl.value.name}`
+        );
+      }
+      ctx.markFloatInitialized(decl.name);
+    } else {
+      const srcReg = ctx.getRegister(decl.value.name);
+      const reg = ctx.allocRegister(decl.name);
+      if (srcReg !== reg) {
+        ctx.emitInstruction(
+          encodeMovRegister(reg, srcReg),
+          `mov r${reg}, r${srcReg} ; ${decl.name} = ${decl.value.name}`
+        );
+      }
+      ctx.registerAlloc.markInitialized(decl.name);
+    }
+  } else if (decl.value.kind === 'array_access') {
+    // Handle array element access (e.g., let x: int = arr[0])
+    const resultReg = generateArrayAccess(decl.value, ctx);
     const reg = ctx.allocRegister(decl.name);
-    if (srcReg !== reg) {
+    if (resultReg !== reg) {
       ctx.emitInstruction(
-        encodeMovRegister(reg, srcReg),
-        `mov r${reg}, r${srcReg} ; ${decl.name} = ${decl.value.name}`
+        encodeMovRegister(reg, resultReg),
+        `mov r${reg}, r${resultReg} ; ${decl.name} = ${decl.value.array.name}[...]`
       );
     }
+    ctx.releaseTemp(resultReg);
+    ctx.registerAlloc.markInitialized(decl.name);
+  } else if (decl.value.kind === 'math_call') {
+    // Handle math function call (e.g., let result: float = sqrt(x))
+    const resultXmm = generateMathCall(decl.value, ctx);
+    const xmm = ctx.allocFloatRegister(decl.name);
+    if (xmm !== resultXmm) {
+      ctx.emitInstruction(
+        encodeFMovReg(xmm, resultXmm),
+        `fmov xmm${xmm}, xmm${resultXmm} ; ${decl.name} = ${decl.value.func}(...)`
+      );
+    }
+    if (resultXmm >= 6) ctx.releaseFloatTemp(resultXmm);
+    ctx.markFloatInitialized(decl.name);
+  } else if (decl.value.kind === 'spawn') {
+    // Handle spawn expression (e.g., let t: thread = spawn worker())
+    const funcName = decl.value.funcName;
+    const reg = ctx.allocRegister(decl.name);
+    const funcLabel = `fn_${funcName}`;
+    
+    // Generate SPAWN instruction: handle goes into reg
+    // The jumpTarget is used by native compiler to resolve function address
+    const bytes = encodeSpawn(reg, funcLabel);
+    ctx.instructions.push({
+      bytes: bytes,
+      comment: `spawn r${reg}, ${funcName} ; ${decl.name} = spawn ${funcName}()`,
+      jumpTarget: funcLabel,
+    });
+    ctx.registerAlloc.markInitialized(decl.name);
+  } else if (decl.value.kind === 'atomic_load') {
+    // Handle atomic load expression (e.g., let val: int = atomic.load(counter))
+    const resultReg = generateAtomicLoad(decl.value, ctx);
+    const reg = ctx.allocRegister(decl.name);
+    if (resultReg !== reg) {
+      ctx.emitInstruction(
+        encodeMovRegister(reg, resultReg),
+        `mov r${reg}, r${resultReg} ; ${decl.name} = atomic.load(${decl.value.sharedVar})`
+      );
+    }
+    ctx.releaseTemp(resultReg);
+    ctx.registerAlloc.markInitialized(decl.name);
+  } else if (decl.value.kind === 'input') {
+    // Handle input expression (e.g., let x: int = input())
+    const resultReg = generateInput(decl.value, ctx);
+    const reg = ctx.allocRegister(decl.name);
+    if (resultReg !== reg) {
+      ctx.emitInstruction(
+        encodeMovRegister(reg, resultReg),
+        `mov r${reg}, r${resultReg} ; ${decl.name} = input()`
+      );
+    }
+    ctx.releaseTemp(resultReg);
     ctx.registerAlloc.markInitialized(decl.name);
   }
 }
 
+// Helper to check if an expression involves floats
+function isFloatExpression(expr, ctx) {
+  if (expr.kind === 'literal') {
+    return expr.type === 'float';
+  }
+  if (expr.kind === 'variable') {
+    // Check if in register OR on stack
+    return ctx.hasFloatVar(expr.name);
+  }
+  if (expr.kind === 'binary') {
+    return isFloatExpression(expr.left, ctx) || isFloatExpression(expr.right, ctx);
+  }
+  if (expr.kind === 'cast') {
+    return expr.targetType === 'float';
+  }
+  if (expr.kind === 'math_call') {
+    return true;  // Math functions always return float
+  }
+  return false;
+}
+
+// Generate float-to-int conversion for a declaration
+// When we have: let result: int = floatExpr
+function generateFloatToIntDeclaration(decl, ctx) {
+  // First evaluate the float expression
+  let srcXmm;
+  if (decl.value.kind === 'variable') {
+    srcXmm = ctx.getFloatRegister(decl.value.name);
+  } else if (decl.value.kind === 'binary') {
+    srcXmm = ctx.allocFloatTemp();
+    generateFloatBinaryInto(decl.value, srcXmm, ctx);
+  } else if (decl.value.kind === 'literal' && decl.value.type === 'float') {
+    srcXmm = ctx.allocFloatTemp();
+    ctx.emitFloatLoadImm(srcXmm, decl.value.value, '');
+  }
+  
+  // Convert float to int
+  const reg = ctx.allocRegister(decl.name);
+  ctx.emitInstruction(
+    encodeCvtSD2SI(reg, srcXmm),
+    `cvtsd2si r${reg}, xmm${srcXmm} ; ${decl.name} = (int)float`
+  );
+  ctx.registerAlloc.markInitialized(decl.name);
+  
+  // Release temp if needed
+  if (decl.value.kind !== 'variable') {
+    ctx.releaseFloatTemp(srcXmm);
+  }
+}
+
+// Generate cast expression declaration
+function generateCastDeclaration(decl, ctx) {
+  const cast = decl.value;
+  
+  if (cast.targetType === 'int' && isFloatExpression(cast.sourceExpr, ctx)) {
+    // float -> int conversion
+    let srcXmm;
+    if (cast.sourceExpr.kind === 'variable') {
+      srcXmm = ctx.getFloatRegister(cast.sourceExpr.name);
+    } else if (cast.sourceExpr.kind === 'binary') {
+      srcXmm = ctx.allocFloatTemp();
+      generateFloatBinaryInto(cast.sourceExpr, srcXmm, ctx);
+    } else if (cast.sourceExpr.kind === 'literal') {
+      srcXmm = ctx.allocFloatTemp();
+      ctx.emitFloatLoadImm(srcXmm, cast.sourceExpr.value, '');
+    }
+    
+    const reg = ctx.allocRegister(decl.name);
+    ctx.emitInstruction(
+      encodeCvtSD2SI(reg, srcXmm),
+      `cvtsd2si r${reg}, xmm${srcXmm} ; ${decl.name} = (int)${cast.sourceExpr.name || 'expr'}`
+    );
+    ctx.registerAlloc.markInitialized(decl.name);
+    
+    if (cast.sourceExpr.kind !== 'variable') {
+      ctx.releaseFloatTemp(srcXmm);
+    }
+  } else if (cast.targetType === 'float' && !isFloatExpression(cast.sourceExpr, ctx)) {
+    // int -> float conversion
+    let srcReg;
+    if (cast.sourceExpr.kind === 'variable') {
+      srcReg = ctx.getRegister(cast.sourceExpr.name);
+    } else if (cast.sourceExpr.kind === 'literal') {
+      srcReg = ctx.allocTemp();
+      ctx.emitInstruction(
+        encodeMovImmediate(srcReg, cast.sourceExpr.value),
+        `mov r${srcReg}, #${cast.sourceExpr.value}`
+      );
+    }
+    
+    const xmm = ctx.allocFloatRegister(decl.name);
+    ctx.emitInstruction(
+      encodeCvtSI2SD(xmm, srcReg),
+      `cvtsi2sd xmm${xmm}, r${srcReg} ; ${decl.name} = (float)${cast.sourceExpr.name || 'expr'}`
+    );
+    ctx.markFloatInitialized(decl.name);
+    
+    if (cast.sourceExpr.kind === 'literal') {
+      ctx.releaseTemp(srcReg);
+    }
+  }
+}
+
+// Generate float binary expression into XMM register
+function generateFloatBinaryInto(expr, destXmm, ctx) {
+  const leftXmm = generateFloatExpr(expr.left, ctx);
+  const rightXmm = generateFloatExpr(expr.right, ctx);
+  
+  switch (expr.operator) {
+    case '+':
+      ctx.emitInstruction(
+        encodeFAddReg(destXmm, leftXmm, rightXmm),
+        `fadd xmm${destXmm}, xmm${leftXmm}, xmm${rightXmm}`
+      );
+      break;
+    case '-':
+      ctx.emitInstruction(
+        encodeFSubReg(destXmm, leftXmm, rightXmm),
+        `fsub xmm${destXmm}, xmm${leftXmm}, xmm${rightXmm}`
+      );
+      break;
+    case '*':
+      ctx.emitInstruction(
+        encodeFMulReg(destXmm, leftXmm, rightXmm),
+        `fmul xmm${destXmm}, xmm${leftXmm}, xmm${rightXmm}`
+      );
+      break;
+    case '/':
+      ctx.emitInstruction(
+        encodeFDivReg(destXmm, leftXmm, rightXmm),
+        `fdiv xmm${destXmm}, xmm${leftXmm}, xmm${rightXmm}`
+      );
+      break;
+    default:
+      throw new Error(`Unsupported float operator: ${expr.operator}`);
+  }
+  
+  // Release temps if they were allocated
+  if (leftXmm >= 6) ctx.releaseFloatTemp(leftXmm);
+  if (rightXmm >= 6) ctx.releaseFloatTemp(rightXmm);
+}
+
+// Generate math function call (sqrt, pow, etc.)
+function generateMathCall(expr, ctx) {
+  const resultXmm = ctx.allocFloatTemp();
+  
+  switch (expr.func) {
+    case 'sqrt': {
+      // sqrt(x) - single argument
+      const argXmm = generateFloatExpr(expr.args[0], ctx);
+      ctx.emitInstruction(
+        encodeFSqrt(resultXmm, argXmm),
+        `fsqrt xmm${resultXmm}, xmm${argXmm}`
+      );
+      if (argXmm >= 6) ctx.releaseFloatTemp(argXmm);
+      break;
+    }
+    case 'pow': {
+      // pow(base, exp) - for integer exponent, use repeated multiplication
+      const baseXmm = generateFloatExpr(expr.args[0], ctx);
+      const expArg = expr.args[1];
+      
+      if (expArg.kind === 'literal' && expArg.type === 'int' && expArg.value >= 0 && expArg.value <= 10) {
+        // Small positive integer exponent - unroll as multiplications
+        const n = expArg.value;
+        if (n === 0) {
+          // x^0 = 1.0
+          ctx.emitFloatLoadImm(resultXmm, 1.0, ' ; pow result = 1.0');
+        } else if (n === 1) {
+          // x^1 = x
+          ctx.emitInstruction(
+            encodeFMovReg(resultXmm, baseXmm),
+            `fmov xmm${resultXmm}, xmm${baseXmm} ; pow(x, 1) = x`
+          );
+        } else {
+          // x^n = x * x * ... (n times)
+          ctx.emitInstruction(
+            encodeFMovReg(resultXmm, baseXmm),
+            `fmov xmm${resultXmm}, xmm${baseXmm} ; pow init`
+          );
+          for (let i = 1; i < n; i++) {
+            ctx.emitInstruction(
+              encodeFMulReg(resultXmm, resultXmm, baseXmm),
+              `fmul xmm${resultXmm}, xmm${resultXmm}, xmm${baseXmm} ; pow step ${i+1}`
+            );
+          }
+        }
+      } else {
+        // General case - use loop for integer exponent
+        // For now, support only literal integer exponents
+        throw new Error('pow() currently only supports small literal integer exponents (0-10)');
+      }
+      if (baseXmm >= 6) ctx.releaseFloatTemp(baseXmm);
+      break;
+    }
+    default:
+      throw new Error(`Unknown math function: ${expr.func}`);
+  }
+  
+  return resultXmm;
+}
+
+// Generate float expression and return XMM register containing result
+function generateFloatExpr(expr, ctx) {
+  if (expr.kind === 'literal') {
+    if (expr.type === 'float') {
+      const xmm = ctx.allocFloatTemp();
+      ctx.emitFloatLoadImm(xmm, expr.value, '');
+      return xmm;
+    } else if (expr.type === 'int') {
+      // Convert int to float
+      const tempReg = ctx.allocTemp();
+      ctx.emitInstruction(
+        encodeMovImmediate(tempReg, expr.value),
+        `mov r${tempReg}, #${expr.value}`
+      );
+      const xmm = ctx.allocFloatTemp();
+      ctx.emitInstruction(
+        encodeCvtSI2SD(xmm, tempReg),
+        `cvtsi2sd xmm${xmm}, r${tempReg}`
+      );
+      ctx.releaseTemp(tempReg);
+      return xmm;
+    }
+  }
+  if (expr.kind === 'variable') {
+    // Check if it's a float variable (in register OR on stack)
+    if (ctx.hasFloatVar(expr.name)) {
+      return ctx.getFloatRegister(expr.name);
+    } else {
+      // Integer variable - convert to float
+      const intReg = ctx.getRegister(expr.name);
+      const xmm = ctx.allocFloatTemp();
+      ctx.emitInstruction(
+        encodeCvtSI2SD(xmm, intReg),
+        `cvtsi2sd xmm${xmm}, r${intReg} ; convert ${expr.name} to float`
+      );
+      return xmm;
+    }
+  }
+  if (expr.kind === 'binary') {
+    const xmm = ctx.allocFloatTemp();
+    generateFloatBinaryInto(expr, xmm, ctx);
+    return xmm;
+  }
+  if (expr.kind === 'math_call') {
+    return generateMathCall(expr, ctx);
+  }
+  throw new Error(`Unsupported float expression kind: ${expr.kind}`);
+}
+
 function generateStatement(stmt, ctx) {
   switch (stmt.kind) {
+    case 'let':
+      generateDeclaration(stmt, ctx);
+      break;
     case 'assign':
       generateAssignment(stmt, ctx);
+      break;
+    case 'array_assign':
+      generateArrayAssignment(stmt, ctx);
       break;
     case 'while':
       generateWhile(stmt, ctx);
@@ -580,12 +1428,28 @@ function generateStatement(stmt, ctx) {
     case 'continue':
       generateContinue(stmt, ctx);
       break;
+    case 'join':
+      generateJoin(stmt, ctx);
+      break;
+    case 'atomic_op':
+      generateAtomicOp(stmt, ctx);
+      break;
+    case 'call_stmt':
+      generateCallStmt(stmt, ctx);
+      break;
     default:
       throw new Error(`Unsupported statement kind: ${stmt.kind}`);
   }
 }
 
 function generateAssignment(stmt, ctx) {
+  // Check if target is a float variable (in register OR on stack)
+  if (ctx.hasFloatVar(stmt.target)) {
+    // Float assignment
+    generateFloatAssignment(stmt, ctx);
+    return;
+  }
+  
   const targetReg = ctx.getRegister(stmt.target);
   
   // Handle different value expressions
@@ -603,43 +1467,217 @@ function generateAssignment(stmt, ctx) {
   }
 }
 
+function generateFloatAssignment(stmt, ctx) {
+  const targetXmm = ctx.getFloatRegister(stmt.target);
+  
+  if (stmt.value.kind === 'literal' && stmt.value.type === 'float') {
+    // Float literal assignment
+    ctx.emitFloatLoadImm(targetXmm, stmt.value.value, stmt.target);
+  } else if (stmt.value.kind === 'variable') {
+    // Variable assignment
+    if (ctx.hasFloatVar(stmt.value.name)) {
+      const srcXmm = ctx.getFloatRegister(stmt.value.name);
+      if (srcXmm !== targetXmm) {
+        ctx.emitInstruction(
+          encodeFMovReg(targetXmm, srcXmm),
+          `fmov xmm${targetXmm}, xmm${srcXmm} ; ${stmt.target} = ${stmt.value.name}`
+        );
+      }
+    }
+  } else if (stmt.value.kind === 'binary' && isFloatExpression(stmt.value, ctx)) {
+    // Float binary expression
+    const tempXmm = ctx.allocFloatTemp();
+    generateFloatBinaryInto(stmt.value, tempXmm, ctx);
+    if (tempXmm !== targetXmm) {
+      ctx.emitInstruction(
+        encodeFMovReg(targetXmm, tempXmm),
+        `fmov xmm${targetXmm}, xmm${tempXmm} ; ${stmt.target}`
+      );
+    }
+    ctx.releaseFloatTemp(tempXmm);
+  }
+}
+
 function generateWhile(stmt, ctx) {
-  const loopLabel = ctx.generateLabel('loop');
-  const exitLabel = ctx.generateLabel('exit');
+  const condLabel = ctx.generateLabel('while_cond');
+  const bodyLabel = ctx.generateLabel('while_body');
+  const exitLabel = ctx.generateLabel('while_exit');
   
-  // Emit loop label
-  ctx.emitLabel(loopLabel);
+  // Push loop context for break/continue
+  ctx.pushLoop(exitLabel, condLabel);
   
-  // Generate loop body first
+  // Jump to condition check first (proper while semantics)
+  ctx.emitInstruction(
+    encodeJmp(condLabel),
+    `jmp ${condLabel} ; check condition first`
+  );
+  
+  // Body label
+  ctx.emitLabel(bodyLabel);
+  
+  // Generate loop body
   for (const bodyStmt of stmt.body.statements) {
     generateStatement(bodyStmt, ctx);
   }
   
-  // Generate condition check at end of loop (post-test optimization)
-  // For binary comparison expressions, we need to emit CMP instruction
+  // Condition check
+  ctx.emitLabel(condLabel);
+  
+  // Generate condition check
   if (stmt.condition.kind === 'binary') {
-    const leftReg = ctx.getRegister(stmt.condition.left.name);
-    const rightValue = stmt.condition.right.value;
+    // Check if this is a float comparison
+    const isFloatComparison = isFloatExpression(stmt.condition.left, ctx) || 
+                               isFloatExpression(stmt.condition.right, ctx);
     
+    if (isFloatComparison) {
+      // Float comparison
+      generateWhileFloatCondition(stmt.condition, ctx, bodyLabel, exitLabel);
+    } else {
+      // Integer comparison
+      generateWhileIntCondition(stmt.condition, ctx, bodyLabel, exitLabel);
+    }
+  } else {
+    throw new Error('While condition must be a binary comparison');
+  }
+  
+  ctx.emitLabel(exitLabel);
+  
+  // Pop loop context
+  ctx.popLoop();
+}
+
+// Generate float comparison condition for while loop
+function generateWhileFloatCondition(condition, ctx, bodyLabel, exitLabel) {
+  // Get left operand XMM register
+  let leftXmm;
+  let leftIsTemp = false;
+  if (condition.left.kind === 'variable' && ctx.hasFloatVar(condition.left.name)) {
+    leftXmm = ctx.getFloatRegister(condition.left.name);
+  } else if (condition.left.kind === 'literal' && (condition.left.type === 'float' || typeof condition.left.value === 'number')) {
+    leftXmm = ctx.allocFloatTemp();
+    leftIsTemp = true;
+    ctx.emitFloatLoadImm(leftXmm, condition.left.value, '');
+  } else {
+    leftXmm = generateFloatExpr(condition.left, ctx);
+    leftIsTemp = true;
+  }
+  
+  // Get right operand XMM register
+  let rightXmm;
+  let rightIsTemp = false;
+  if (condition.right.kind === 'variable' && ctx.hasFloatVar(condition.right.name)) {
+    rightXmm = ctx.getFloatRegister(condition.right.name);
+  } else if (condition.right.kind === 'literal' && (condition.right.type === 'float' || typeof condition.right.value === 'number')) {
+    rightXmm = ctx.allocFloatTemp();
+    rightIsTemp = true;
+    ctx.emitFloatLoadImm(rightXmm, condition.right.value, '');
+  } else {
+    rightXmm = generateFloatExpr(condition.right, ctx);
+    rightIsTemp = true;
+  }
+  
+  // Emit FCMP instruction
+  ctx.emitInstruction(
+    encodeFCmp(leftXmm, rightXmm),
+    `fcmp xmm${leftXmm}, xmm${rightXmm}`
+  );
+  
+  // Release temps if needed
+  if (leftIsTemp) ctx.releaseFloatTemp(leftXmm);
+  if (rightIsTemp) ctx.releaseFloatTemp(rightXmm);
+  
+  // Jump to body if condition is TRUE (opposite of if-statement logic)
+  let jumpInstr;
+  switch (condition.operator) {
+    case '<':
+      jumpInstr = encodeCjmpLt(bodyLabel);
+      break;
+    case '>':
+      jumpInstr = encodeCjmpGt(bodyLabel);
+      break;
+    case '<=':
+      jumpInstr = encodeCjmpLeq(bodyLabel);
+      break;
+    case '>=':
+      jumpInstr = encodeCjmpGeq(bodyLabel);
+      break;
+    case '==':
+      jumpInstr = encodeCjmpEq(bodyLabel);
+      break;
+    case '!=':
+      jumpInstr = encodeCjmpNeq(bodyLabel);
+      break;
+    default:
+      throw new Error(`Unsupported comparison operator: ${condition.operator}`);
+  }
+  
+  ctx.emitInstruction(
+    jumpInstr,
+    `cjmp ${condition.operator}, ${bodyLabel} ; continue loop if true`
+  );
+  // Fall through to exit if condition is false
+}
+
+// Generate integer comparison condition for while loop
+function generateWhileIntCondition(condition, ctx, bodyLabel, exitLabel) {
+  // Get left operand
+  let leftReg;
+  if (condition.left.kind === 'variable') {
+    leftReg = ctx.getRegister(condition.left.name);
+  } else if (condition.left.kind === 'literal') {
+    leftReg = ctx.allocTemp();
     ctx.emitInstruction(
-      encodeCmpRegImm(leftReg, rightValue),
-      `cmp r${leftReg}, #${rightValue}`
+      encodeMovImmediate(leftReg, condition.left.value),
+      `mov r${leftReg}, #${condition.left.value}`
     );
-    
-    // Jump to exit if condition is false (counter == 0 for > 0 check)
+  } else {
+    leftReg = generateIntExpr(condition.left, ctx);
+  }
+  
+  // Compare with right operand
+  if (condition.right.kind === 'literal') {
     ctx.emitInstruction(
-      encodeCjmpEq(exitLabel),
-      `cjmp eq, ${exitLabel}`
+      encodeCmpRegImm(leftReg, condition.right.value),
+      `cmp r${leftReg}, #${condition.right.value}`
+    );
+  } else if (condition.right.kind === 'variable') {
+    const rightReg = ctx.getRegister(condition.right.name);
+    ctx.emitInstruction(
+      encodeCmpRegReg(leftReg, rightReg),
+      `cmp r${leftReg}, r${rightReg}`
     );
   }
   
-  // Jump back to loop start
-  ctx.emitInstruction(
-    encodeJmp(loopLabel),
-    `jmp ${loopLabel}`
-  );
+  // Jump to body if condition is TRUE
+  let jumpInstr;
+  switch (condition.operator) {
+    case '<':
+      jumpInstr = encodeCjmpLt(bodyLabel);
+      break;
+    case '>':
+      jumpInstr = encodeCjmpGt(bodyLabel);
+      break;
+    case '<=':
+      jumpInstr = encodeCjmpLeq(bodyLabel);
+      break;
+    case '>=':
+      jumpInstr = encodeCjmpGeq(bodyLabel);
+      break;
+    case '==':
+      jumpInstr = encodeCjmpEq(bodyLabel);
+      break;
+    case '!=':
+      jumpInstr = encodeCjmpNeq(bodyLabel);
+      break;
+    default:
+      throw new Error(`Unsupported comparison operator: ${condition.operator}`);
+  }
   
-  ctx.emitLabel(exitLabel);
+  ctx.emitInstruction(
+    jumpInstr,
+    `cjmp ${condition.operator}, ${bodyLabel} ; continue loop if true`
+  );
+  // Fall through to exit if condition is false
 }
 
 function generateFor(stmt, ctx) {
@@ -756,83 +1794,169 @@ function generateContinue(stmt, ctx) {
   );
 }
 
+function generateJoin(stmt, ctx) {
+  // Get the thread handle register
+  const handleReg = ctx.getRegister(stmt.handleName);
+  
+  // Generate JOIN instruction
+  ctx.emitInstruction(
+    encodeJoin(handleReg),
+    `join r${handleReg} ; join ${stmt.handleName}`
+  );
+}
+
+function generateAtomicOp(stmt, ctx) {
+  const sharedId = ctx.getSharedVarId(stmt.target);
+  
+  switch (stmt.operation) {
+    case 'add': {
+      // atomic.add(target, value)
+      const valueReg = generateExpression(stmt.value, ctx);
+      ctx.emitInstruction(
+        encodeAtomicOp(ISA.OPCODE.ATOMIC_ADD, sharedId, valueReg),
+        `atomic_add shared[${sharedId}], r${valueReg} ; ${stmt.target} += ...`
+      );
+      break;
+    }
+    case 'fadd': {
+      // atomic.fadd(target, value) - atomic float add
+      // Value should be a float expression
+      const srcXmm = generateFloatExpr(stmt.value, ctx);
+      ctx.emitInstruction(
+        encodeAtomicOp(ISA.OPCODE.ATOMIC_FADD, sharedId, srcXmm),
+        `atomic_fadd shared[${sharedId}], xmm${srcXmm} ; ${stmt.target} += (float) ...`
+      );
+      break;
+    }
+    case 'sub': {
+      // atomic.sub(target, value) - negate and add
+      const valueReg = generateExpression(stmt.value, ctx);
+      // Negate the value first
+      const tempReg = ctx.allocTemp();
+      ctx.emitInstruction(
+        encodeMovImmediate(tempReg, 0),
+        `mov r${tempReg}, 0 ; temp for negation`
+      );
+      ctx.emitInstruction(
+        encodeSub(tempReg, valueReg),
+        `sub r${tempReg}, r${valueReg} ; negate`
+      );
+      ctx.emitInstruction(
+        encodeAtomicOp(ISA.OPCODE.ATOMIC_ADD, sharedId, tempReg),
+        `atomic_add shared[${sharedId}], r${tempReg} ; ${stmt.target} -= ...`
+      );
+      ctx.releaseTemp(tempReg);
+      break;
+    }
+    case 'store': {
+      // atomic.store(target, value)
+      const valueReg = generateExpression(stmt.value, ctx);
+      ctx.emitInstruction(
+        encodeAtomicOp(ISA.OPCODE.ATOMIC_STORE, sharedId, valueReg),
+        `atomic_store shared[${sharedId}], r${valueReg} ; ${stmt.target} = ...`
+      );
+      break;
+    }
+    case 'load': {
+      // atomic.load(target) - loads into a temp register
+      // This should be used in expressions, not as a statement
+      throw new Error('atomic.load should be used as an expression, not a statement');
+    }
+    case 'cas': {
+      // atomic.cas(target, expected, new_value)
+      // For CAS, we need expected in one register and new value in another
+      // Result goes into a status register
+      throw new Error('atomic.cas not yet implemented');
+    }
+    default:
+      throw new Error(`Unknown atomic operation: ${stmt.operation}`);
+  }
+}
+
+// Encode atomic operation instruction
+function encodeAtomicOp(opcode, sharedId, srcReg) {
+  // Format: opcode, shared_id, src_reg, 0, 0 (using packInstruction format)
+  return packInstruction(opcode, sharedId, srcReg, ISA.OPERAND.UNUSED, 0);
+}
+
+// Generate call statement (call without using return value)
+function generateCallStmt(stmt, ctx) {
+  const fnLabel = ctx.getFunctionLabel(stmt.functionName);
+  
+  // Generate arguments into registers r1-r6
+  for (let i = 0; i < stmt.args.length && i < 6; i++) {
+    const argReg = i + 1;  // r1, r2, r3, ...
+    const arg = stmt.args[i];
+    const valueReg = generateExpression(arg, ctx);
+    if (valueReg !== argReg) {
+      ctx.emitInstruction(
+        encodeMovRegister(argReg, valueReg),
+        `mov r${argReg}, r${valueReg} ; arg ${i + 1}`
+      );
+    }
+  }
+  
+  // Generate call instruction
+  ctx.emitInstruction(
+    encodeCall(fnLabel),
+    `call ${fnLabel} ; ${stmt.functionName}()`
+  );
+  
+  // Return value (if any) is in r0, but we discard it
+}
+
+// Generate atomic load expression
+function generateAtomicLoad(expr, ctx) {
+  const sharedId = ctx.getSharedVarId(expr.sharedVar);
+  const destReg = ctx.allocTemp();
+  
+  // ATOMIC_LOAD format: dest_reg, shared_id (different from other atomic ops)
+  ctx.emitInstruction(
+    packInstruction(ISA.OPCODE.ATOMIC_LOAD, destReg, sharedId, ISA.OPERAND.UNUSED, 0),
+    `atomic_load r${destReg}, shared[${sharedId}] ; ${expr.sharedVar}`
+  );
+  
+  return destReg;
+}
+
+// Generate input() expression - reads integer from stdin
+function generateInput(expr, ctx) {
+  // Emit SVC 0x06 (input_int) - result goes to r0
+  ctx.emitInstruction(
+    encodeSvc(0x06, ISA.OPERAND.UNUSED),
+    `svc 0x06 ; input_int -> r0`
+  );
+  
+  // Result is in r0, but we may need to move it to a temp register
+  // if the caller expects a different register
+  const destReg = ctx.allocTemp();
+  if (destReg !== ISA.REGISTER.r0) {
+    ctx.emitInstruction(
+      encodeMovRegister(destReg, ISA.REGISTER.r0),
+      `mov r${destReg}, r0 ; copy input result`
+    );
+  }
+  
+  return destReg;
+}
+
 function generateIf(stmt, ctx) {
   const elseLabel = ctx.generateLabel('else');
   const endLabel = ctx.generateLabel('endif');
   
   // Evaluate condition and generate comparison
   if (stmt.condition.kind === 'binary') {
-    // Get left operand register (variable or temp)
-    let leftReg;
-    if (stmt.condition.left.kind === 'variable') {
-      leftReg = ctx.getRegister(stmt.condition.left.name);
+    // Check if this is a float comparison
+    const isFloatCmp = isFloatExpression(stmt.condition.left, ctx) || 
+                       isFloatExpression(stmt.condition.right, ctx);
+    
+    if (isFloatCmp) {
+      // Float comparison
+      generateFloatComparison(stmt, ctx, elseLabel, endLabel);
     } else {
-      leftReg = generateExpression(stmt.condition.left, ctx);
+      // Integer comparison
+      generateIntegerComparison(stmt, ctx, elseLabel, endLabel);
     }
-    
-    // Emit comparison instruction
-    if (stmt.condition.right.kind === 'literal') {
-      ctx.emitInstruction(
-        encodeCmpRegImm(leftReg, stmt.condition.right.value),
-        `cmp r${leftReg}, #${stmt.condition.right.value}`
-      );
-    } else if (stmt.condition.right.kind === 'variable') {
-      const rightReg = ctx.getRegister(stmt.condition.right.name);
-      ctx.emitInstruction(
-        encodeCmpRegReg(leftReg, rightReg),
-        `cmp r${leftReg}, r${rightReg}`
-      );
-    } else {
-      const rightReg = generateExpression(stmt.condition.right, ctx);
-      ctx.emitInstruction(
-        encodeCmpRegReg(leftReg, rightReg),
-        `cmp r${leftReg}, r${rightReg}`
-      );
-      ctx.releaseTemp(rightReg);
-    }
-    
-    // Release left temp if allocated
-    if (stmt.condition.left.kind !== 'variable') {
-      ctx.releaseTemp(leftReg);
-    }
-    
-    // Determine jump condition based on operator
-    // For 'x > 3', if condition is FALSE (x <= 3), jump to else/end
-    // CMP sets flags, we need to jump on the NEGATION of the condition
-    let jumpInstr;
-    switch (stmt.condition.operator) {
-      case '>':
-        // If NOT greater (less or equal), jump to else/end
-        jumpInstr = encodeCjmpLeq(stmt.elseBranch ? elseLabel : endLabel);
-        break;
-      case '<':
-        // If NOT less (greater or equal), jump to else/end
-        jumpInstr = encodeCjmpGeq(stmt.elseBranch ? elseLabel : endLabel);
-        break;
-      case '>=':
-        // If NOT greater-or-equal (less), jump to else/end
-        jumpInstr = encodeCjmpLt(stmt.elseBranch ? elseLabel : endLabel);
-        break;
-      case '<=':
-        // If NOT less-or-equal (greater), jump to else/end
-        jumpInstr = encodeCjmpGt(stmt.elseBranch ? elseLabel : endLabel);
-        break;
-      case '==':
-        // If NOT equal, jump to else/end
-        jumpInstr = encodeCjmpNeq(stmt.elseBranch ? elseLabel : endLabel);
-        break;
-      case '!=':
-        // If equal, jump to else/end
-        jumpInstr = encodeCjmpEq(stmt.elseBranch ? elseLabel : endLabel);
-        break;
-      default:
-        throw new Error(`Unsupported comparison operator: ${stmt.condition.operator}`);
-    }
-    
-    ctx.emitInstruction(
-      jumpInstr,
-      `cjmp (negated ${stmt.condition.operator}), ${stmt.elseBranch ? elseLabel : endLabel}`
-    );
   } else {
     throw new Error('If condition must be a comparison expression');
   }
@@ -858,62 +1982,309 @@ function generateIf(stmt, ctx) {
   ctx.emitLabel(endLabel);
 }
 
-function generateRequest(stmt, ctx) {
-  const serviceMap = {
-    print: 0x01,
-    exit: 0x02,
-    pause: 0x03,           // Wait for key press, show exit code
-    pause_silent: 0x04,    // Wait for key press without message
-  };
-  
-  const serviceCode = serviceMap[stmt.service];
-  if (serviceCode === undefined) {
-    throw new Error(`Unknown service: ${stmt.service}`);
+function generateIntegerComparison(stmt, ctx, elseLabel, endLabel) {
+  // Get left operand register (variable or temp)
+  let leftReg;
+  if (stmt.condition.left.kind === 'variable') {
+    leftReg = ctx.getRegister(stmt.condition.left.name);
+  } else {
+    leftReg = generateExpression(stmt.condition.left, ctx);
   }
   
-  // Move argument to r0 (service convention)
+  // Emit comparison instruction
+  if (stmt.condition.right.kind === 'literal') {
+    ctx.emitInstruction(
+      encodeCmpRegImm(leftReg, stmt.condition.right.value),
+      `cmp r${leftReg}, #${stmt.condition.right.value}`
+    );
+  } else if (stmt.condition.right.kind === 'variable') {
+    const rightReg = ctx.getRegister(stmt.condition.right.name);
+    ctx.emitInstruction(
+      encodeCmpRegReg(leftReg, rightReg),
+      `cmp r${leftReg}, r${rightReg}`
+    );
+  } else {
+    const rightReg = generateExpression(stmt.condition.right, ctx);
+    ctx.emitInstruction(
+      encodeCmpRegReg(leftReg, rightReg),
+      `cmp r${leftReg}, r${rightReg}`
+    );
+    ctx.releaseTemp(rightReg);
+  }
+  
+  // Release left temp if allocated
+  if (stmt.condition.left.kind !== 'variable') {
+    ctx.releaseTemp(leftReg);
+  }
+  
+  // Determine jump condition based on operator
+  // For 'x > 3', if condition is FALSE (x <= 3), jump to else/end
+  // CMP sets flags, we need to jump on the NEGATION of the condition
+  let jumpInstr;
+  switch (stmt.condition.operator) {
+    case '>':
+      // If NOT greater (less or equal), jump to else/end
+      jumpInstr = encodeCjmpLeq(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '<':
+      // If NOT less (greater or equal), jump to else/end
+      jumpInstr = encodeCjmpGeq(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '>=':
+      // If NOT greater-or-equal (less), jump to else/end
+      jumpInstr = encodeCjmpLt(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '<=':
+      // If NOT less-or-equal (greater), jump to else/end
+      jumpInstr = encodeCjmpGt(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '==':
+      // If NOT equal, jump to else/end
+      jumpInstr = encodeCjmpNeq(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '!=':
+      // If equal, jump to else/end
+      jumpInstr = encodeCjmpEq(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    default:
+      throw new Error(`Unsupported comparison operator: ${stmt.condition.operator}`);
+  }
+  
+  ctx.emitInstruction(
+    jumpInstr,
+    `cjmp (negated ${stmt.condition.operator}), ${stmt.elseBranch ? elseLabel : endLabel}`
+  );
+}
+
+function generateFloatComparison(stmt, ctx, elseLabel, endLabel) {
+  // Get left operand XMM register
+  let leftXmm;
+  if (stmt.condition.left.kind === 'variable' && ctx.hasFloatVar(stmt.condition.left.name)) {
+    leftXmm = ctx.getFloatRegister(stmt.condition.left.name);
+  } else if (stmt.condition.left.kind === 'literal' && stmt.condition.left.type === 'float') {
+    leftXmm = ctx.allocFloatTemp();
+    ctx.emitFloatLoadImm(leftXmm, stmt.condition.left.value, '');
+  } else {
+    leftXmm = generateFloatExpr(stmt.condition.left, ctx);
+  }
+  
+  // Get right operand XMM register
+  let rightXmm;
+  if (stmt.condition.right.kind === 'variable' && ctx.hasFloatVar(stmt.condition.right.name)) {
+    rightXmm = ctx.getFloatRegister(stmt.condition.right.name);
+  } else if (stmt.condition.right.kind === 'literal' && stmt.condition.right.type === 'float') {
+    rightXmm = ctx.allocFloatTemp();
+    ctx.emitFloatLoadImm(rightXmm, stmt.condition.right.value, '');
+  } else {
+    rightXmm = generateFloatExpr(stmt.condition.right, ctx);
+  }
+  
+  // Emit FCMP instruction
+  ctx.emitInstruction(
+    encodeFCmp(leftXmm, rightXmm),
+    `fcmp xmm${leftXmm}, xmm${rightXmm}`
+  );
+  
+  // Release temps if needed
+  if (stmt.condition.left.kind === 'literal' || 
+      (stmt.condition.left.kind === 'variable' && !ctx.hasFloatVar(stmt.condition.left.name))) {
+    ctx.releaseFloatTemp(leftXmm);
+  }
+  if (stmt.condition.right.kind === 'literal' ||
+      (stmt.condition.right.kind === 'variable' && !ctx.hasFloatVar(stmt.condition.right.name))) {
+    ctx.releaseFloatTemp(rightXmm);
+  }
+  
+  // Determine jump condition based on operator
+  // Same logic as integer comparison
+  let jumpInstr;
+  switch (stmt.condition.operator) {
+    case '>':
+      jumpInstr = encodeCjmpLeq(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '<':
+      jumpInstr = encodeCjmpGeq(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '>=':
+      jumpInstr = encodeCjmpLt(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '<=':
+      jumpInstr = encodeCjmpGt(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '==':
+      jumpInstr = encodeCjmpNeq(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    case '!=':
+      jumpInstr = encodeCjmpEq(stmt.elseBranch ? elseLabel : endLabel);
+      break;
+    default:
+      throw new Error(`Unsupported comparison operator: ${stmt.condition.operator}`);
+  }
+  
+  ctx.emitInstruction(
+    jumpInstr,
+    `cjmp (negated ${stmt.condition.operator}), ${stmt.elseBranch ? elseLabel : endLabel}`
+  );
+}
+
+function generateRequest(stmt, ctx) {
+  const serviceMap = {
+    print: 0x01,          // print string (legacy)
+    exit: 0x02,
+    pause: 0x03,          // Wait for key press, show exit code
+    pause_silent: 0x04,   // Wait for key press without message
+    print_int: 0x05,      // print integer
+    input_int: 0x06,      // read integer
+    print_float: 0x07,    // print float
+  };
+  
+  // Determine actual service based on argument type
+  let actualService = stmt.service;
+  
+  if (stmt.service === 'print' && stmt.args.length > 0) {
+    const arg = stmt.args[0];
+    // Detect argument type for print
+    if (arg.kind === 'literal' && arg.type === 'string') {
+      actualService = 'print';  // string print
+    } else if (arg.kind === 'literal' && arg.type === 'int') {
+      actualService = 'print_int';
+    } else if (arg.kind === 'literal' && arg.type === 'float') {
+      actualService = 'print_float';
+    } else if (arg.kind === 'variable') {
+      // Check variable type
+      if (arg.type === 'string') {
+        actualService = 'print';
+      } else if (ctx.hasFloatVar(arg.name)) {
+        actualService = 'print_float';
+      } else {
+        actualService = 'print_int';
+      }
+    } else if (isFloatExpression(arg, ctx)) {
+      // Float expression
+      actualService = 'print_float';
+    } else {
+      // Expression result - assume int
+      actualService = 'print_int';
+    }
+  }
+  
+  const serviceCode = serviceMap[actualService];
+  if (serviceCode === undefined) {
+    throw new Error(`Unknown service: ${actualService}`);
+  }
+  
+  // Track string label for print service
+  let stringLabel = null;
+  
+  // Move argument to r0/r1/xmm6 (service convention)
+  // Use xmm6 for float to avoid clobbering user variables in xmm0-xmm5
   if (stmt.args.length > 0) {
     const arg = stmt.args[0];
     
-    if (arg.kind === 'literal' && arg.type === 'int') {
+    if (actualService === 'print_float') {
+      // Float argument - put in xmm6 (temp register, won't clobber user vars)
+      if (arg.kind === 'literal' && arg.type === 'float') {
+        ctx.emitFloatLoadImm(6, arg.value, `; load ${arg.value} to xmm6 for print`);
+      } else if (arg.kind === 'variable' && ctx.hasFloatVar(arg.name)) {
+        const srcXmm = ctx.getFloatRegister(arg.name);
+        ctx.emitInstruction(
+          encodeFMovReg(6, srcXmm),
+          `fmov xmm6, xmm${srcXmm} ; copy for print`
+        );
+      } else if (arg.kind === 'binary' && isFloatExpression(arg, ctx)) {
+        generateFloatBinaryInto(arg, 6, ctx);
+      } else if (arg.kind === 'math_call') {
+        // Math function call result - generate and put in xmm6
+        const resultXmm = generateMathCall(arg, ctx);
+        ctx.emitInstruction(
+          encodeFMovReg(6, resultXmm),
+          `fmov xmm6, xmm${resultXmm} ; ${arg.func} result for print`
+        );
+        if (resultXmm >= 6) ctx.releaseFloatTemp(resultXmm);
+      } else {
+        throw new Error(`Cannot print non-float as float: ${arg.kind}`);
+      }
+    } else if (arg.kind === 'literal' && arg.type === 'string') {
+      // String literal - load address into r1 for print service
+      stringLabel = ctx.addString(arg.value);
+      ctx.emitInstruction(
+        encodeMovLabel(ISA.REGISTER.r1),
+        `mov r1, @${stringLabel}`
+      );
+    } else if (arg.kind === 'literal' && arg.type === 'int') {
       // Direct immediate to r0
       ctx.emitInstruction(
         encodeMovImmediate(ISA.REGISTER.r0, arg.value),
         `mov r0, #${arg.value}`
       );
     } else if (arg.kind === 'variable') {
-      const argReg = ctx.getRegister(arg.name);
-      
-      // Special handling for print service - string should stay in r1
-      if (stmt.service === 'print' && arg.type === 'string') {
-        // String address should already be in the variable's register
-        // Don't move to r0, print service expects string address in r1
-        // (based on legacy output analysis)
-      } else if (argReg !== ISA.REGISTER.r0) {
-        ctx.emitInstruction(
-          encodeMovRegister(ISA.REGISTER.r0, argReg),
-          `mov r0, r${argReg}`
-        );
+      // Check if this is a float variable first
+      if (ctx.hasFloatVar(arg.name)) {
+        // Float variable - this should have been handled by print_float path
+        // If we get here with a float var and non-float service, error
+        if (actualService !== 'print_float') {
+          throw new Error(`Float variable ${arg.name} requires print_float service`);
+        }
+        // Already handled in print_float section above, shouldn't reach here
+      } else {
+        const argReg = ctx.getRegister(arg.name);
+        
+        // Special handling for print service - string should stay in r1
+        if (actualService === 'print' && arg.type === 'string') {
+          // String address should already be in the variable's register
+          // Move to r1 if not already there
+          if (argReg !== ISA.REGISTER.r1) {
+            ctx.emitInstruction(
+              encodeMovRegister(ISA.REGISTER.r1, argReg),
+              `mov r1, r${argReg}`
+            );
+          }
+        } else if (argReg !== ISA.REGISTER.r0) {
+          ctx.emitInstruction(
+            encodeMovRegister(ISA.REGISTER.r0, argReg),
+            `mov r0, r${argReg}`
+          );
+        }
       }
     } else {
-      const argReg = generateExpression(arg, ctx);
-      if (argReg !== ISA.REGISTER.r0) {
+      // Expression - evaluate to temp register (don't modify original variable registers)
+      const tempReg = ctx.allocTemp();
+      if (arg.kind === 'binary') {
+        generateBinaryInto(arg, tempReg, ctx);
+      } else {
+        const argReg = generateExpression(arg, ctx);
+        if (argReg !== tempReg) {
+          ctx.emitInstruction(
+            encodeMovRegister(tempReg, argReg),
+            `mov r${tempReg}, r${argReg}`
+          );
+        }
+      }
+      if (tempReg !== ISA.REGISTER.r0) {
         ctx.emitInstruction(
-          encodeMovRegister(ISA.REGISTER.r0, argReg),
-          `mov r0, r${argReg}`
+          encodeMovRegister(ISA.REGISTER.r0, tempReg),
+          `mov r0, r${tempReg}`
         );
       }
+      ctx.releaseTemp(tempReg);
     }
   }
   
   // Emit SVC instruction
   // For write service, op1=0x01 (stdout)
-  const op1 = (stmt.service === 'print') ? 0x01 : ISA.OPERAND.UNUSED;
+  const op1 = (actualService === 'print') ? 0x01 : ISA.OPERAND.UNUSED;
   
-  ctx.emitInstruction(
-    encodeSvc(serviceCode, op1),
-    `svc 0x${serviceCode.toString(16).padStart(2, '0')}`
-  );
+  const svcInstr = {
+    bytes: encodeSvc(serviceCode, op1),
+    comment: `svc 0x${serviceCode.toString(16).padStart(2, '0')}`
+  };
+  
+  // Attach string label metadata for native compiler
+  if (stringLabel) {
+    svcInstr._lastStringInR1 = stringLabel;
+  }
+  
+  ctx.instructions.push(svcInstr);
 }
 
 function generateReturn(stmt, ctx) {
@@ -972,6 +2343,18 @@ function generateExpression(expr, ctx) {
       
     case 'call':
       return generateCallExpr(expr, ctx);
+      
+    case 'array_literal':
+      return generateArrayLiteral(expr, ctx);
+      
+    case 'array_access':
+      return generateArrayAccess(expr, ctx);
+      
+    case 'atomic_load':
+      return generateAtomicLoad(expr, ctx);
+      
+    case 'input':
+      return generateInput(expr, ctx);
       
     default:
       throw new Error(`Unsupported expression kind: ${expr.kind}`);
@@ -1599,6 +2982,170 @@ function generateBinary(expr, ctx) {
 }
 
 // =============================================================================
+// Array Operations
+// =============================================================================
+
+/**
+ * Generate code for array literal initialization
+ * Array elements are stored sequentially in stack slots
+ */
+function generateArrayLiteral(expr, ctx) {
+  // For array literal, we allocate contiguous stack slots and store elements
+  const arrayName = ctx.currentArrayName || `_arr_${ctx.nextArrayId++}`;
+  const baseSlot = ctx.allocArraySlots(arrayName, expr.elements.length);
+  
+  // Store each element to its slot
+  for (let i = 0; i < expr.elements.length; i++) {
+    const elemExpr = expr.elements[i];
+    let valueReg;
+    
+    if (elemExpr.kind === 'literal') {
+      valueReg = ctx.allocTemp();
+      ctx.emitInstruction(
+        encodeMovImmediate(valueReg, elemExpr.value),
+        `mov r${valueReg}, #${elemExpr.value} ; arr[${i}]`
+      );
+    } else if (elemExpr.kind === 'variable') {
+      valueReg = ctx.getRegister(elemExpr.name);
+    } else {
+      valueReg = generateExpression(elemExpr, ctx);
+    }
+    
+    // Store to stack slot: [RSP + shadow_space + (baseSlot + i) * 8]
+    // Shadow space is 32 bytes for Win64
+    const slotIndex = baseSlot + i;
+    const stackOffset = 32 + slotIndex * 8;  // Convert slot to byte offset
+    ctx.emitInstruction(
+      encodeStoreStack(valueReg, stackOffset),
+      `store [RSP+${stackOffset}], r${valueReg} ; arr[${i}] = ${elemExpr.kind === 'literal' ? elemExpr.value : '...'}`
+    );
+    
+    if (elemExpr.kind === 'literal') {
+      ctx.releaseTemp(valueReg);
+    }
+  }
+  
+  // For array variables, we don't need a result register - just track the base slot
+  return null;
+}
+
+/**
+ * Generate code for array element access: arr[index]
+ */
+function generateArrayAccess(expr, ctx) {
+  // Get array base slot from context
+  const arrayName = expr.array.name;
+  const baseSlot = ctx.getArrayBaseSlot(arrayName);
+  
+  if (baseSlot === undefined) {
+    throw new Error(`Unknown array: ${arrayName}`);
+  }
+  
+  // Evaluate index expression
+  let indexReg;
+  let needReleaseIndex = false;
+  
+  if (expr.index.kind === 'literal') {
+    // Static index - we can calculate the stack offset directly
+    const staticIndex = expr.index.value;
+    const slotIndex = baseSlot + staticIndex;
+    const stackOffset = 32 + slotIndex * 8;  // Shadow space + slot * 8
+    const resultReg = ctx.allocTemp();
+    
+    ctx.emitInstruction(
+      encodeLoadStack(resultReg, stackOffset),
+      `load r${resultReg}, [RSP+${stackOffset}] ; ${arrayName}[${staticIndex}]`
+    );
+    
+    return resultReg;
+  } else {
+    // Dynamic index - need to compute slot at runtime
+    indexReg = generateExpression(expr.index, ctx);
+    needReleaseIndex = true;
+  }
+  
+  // For dynamic indexing, we need:
+  // 1. Add baseSlot to index to get actual slot
+  // 2. Use ARRAY_LOAD instruction
+  const resultReg = ctx.allocTemp();
+  
+  ctx.emitInstruction(
+    encodeArrayLoad(resultReg, baseSlot, indexReg),
+    `array_load r${resultReg}, [base ${baseSlot} + r${indexReg}] ; ${arrayName}[...]`
+  );
+  
+  if (needReleaseIndex) {
+    ctx.releaseTemp(indexReg);
+  }
+  
+  return resultReg;
+}
+
+/**
+ * Generate code for array element assignment: arr[index] = value
+ */
+function generateArrayAssignment(stmt, ctx) {
+  const arrayName = stmt.arrayName;
+  const baseSlot = ctx.getArrayBaseSlot(arrayName);
+  
+  if (baseSlot === undefined) {
+    throw new Error(`Unknown array: ${arrayName}`);
+  }
+  
+  // Evaluate value expression first
+  let valueReg;
+  if (stmt.value.kind === 'literal') {
+    valueReg = ctx.allocTemp();
+    ctx.emitInstruction(
+      encodeMovImmediate(valueReg, stmt.value.value),
+      `mov r${valueReg}, #${stmt.value.value}`
+    );
+  } else if (stmt.value.kind === 'variable') {
+    valueReg = ctx.getRegister(stmt.value.name);
+  } else {
+    valueReg = generateExpression(stmt.value, ctx);
+  }
+  
+  // Handle index
+  if (stmt.index.kind === 'literal') {
+    // Static index
+    const staticIndex = stmt.index.value;
+    const slotIndex = baseSlot + staticIndex;
+    const stackOffset = 32 + slotIndex * 8;  // Shadow space + slot * 8
+    
+    ctx.emitInstruction(
+      encodeStoreStack(valueReg, stackOffset),
+      `store [RSP+${stackOffset}], r${valueReg} ; ${arrayName}[${staticIndex}] = ...`
+    );
+  } else {
+    // Dynamic index
+    const indexReg = generateExpression(stmt.index, ctx);
+    
+    ctx.emitInstruction(
+      encodeArrayStore(baseSlot, indexReg, valueReg),
+      `array_store [base ${baseSlot} + r${indexReg}], r${valueReg} ; ${arrayName}[...] = ...`
+    );
+    
+    ctx.releaseTemp(indexReg);
+  }
+  
+  if (stmt.value.kind === 'literal') {
+    ctx.releaseTemp(valueReg);
+  }
+}
+
+// Encoding helpers for array operations
+function encodeArrayLoad(destReg, baseSlot, indexReg) {
+  // ARRAY_LOAD: opcode dest, base_slot, index_reg
+  return packInstruction(ISA.OPCODE.ARRAY_LOAD, destReg, baseSlot, indexReg, 0);
+}
+
+function encodeArrayStore(baseSlot, indexReg, valueReg) {
+  // ARRAY_STORE: opcode base_slot, index_reg, value_reg
+  return packInstruction(ISA.OPCODE.ARRAY_STORE, baseSlot, indexReg, valueReg, 0);
+}
+
+// =============================================================================
 // Manifest Emission
 // =============================================================================
 
@@ -1608,6 +3155,34 @@ function emitManifest(ctx, sourceFile) {
   lines.push('# Aurora minimal ISA manifest (Stage N1 pipeline output)');
   lines.push(`# Generated from: ${sourceFile}`);
   lines.push('');
+  
+  // Emit stack frame size directive
+  const stackFrameSize = ctx.getStackFrameSize();
+  if (stackFrameSize > 0) {
+    lines.push(`# Stack frame size: ${stackFrameSize} bytes`);
+    lines.push(`stack_size ${stackFrameSize}`);
+    lines.push('');
+  }
+  
+  // Emit shared variable declarations
+  if (ctx.sharedVars && ctx.sharedVars.size > 0) {
+    lines.push('# Shared variables');
+    for (const [name, info] of ctx.sharedVars) {
+      let initVal = info.initialValue && info.initialValue.value !== undefined 
+        ? info.initialValue.value 
+        : 0;
+      
+      // For float types, convert to IEEE 754 bit representation
+      if (info.type === 'float' || info.type === 'f64') {
+        const floatBuf = Buffer.alloc(8);
+        floatBuf.writeDoubleLE(initVal);
+        initVal = floatBuf.readBigUInt64LE();
+      }
+      
+      lines.push(`shared ${info.id} ${name} ${initVal}`);
+    }
+    lines.push('');
+  }
   
   // Emit instructions with comments
   for (const instr of ctx.instructions) {

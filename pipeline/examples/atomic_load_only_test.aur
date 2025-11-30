@@ -1,0 +1,8 @@
+// Test: just load initial value without threads
+// Expected: 10
+
+shared counter: int = 10;
+
+fn main() -> int {
+  return atomic.load(counter);
+}

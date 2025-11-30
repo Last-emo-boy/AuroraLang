@@ -1,6 +1,9 @@
 # Aurora minimal ISA manifest (Stage N1 pipeline output)
 # Generated from: C:\Users\w33d\Documents\GitHub\AuroraLang\pipeline\examples\arithmetic_ops.aur
 
+# Stack frame size: 104 bytes
+stack_size 104
+
 bytes 0x07FE000000000000  ; jmp fn_main ; entry point
 bytes 0x0101FF0000000006  ; mov r1, #6 ; a
 bytes 0x0102FF0000000004  ; mov r2, #4 ; b

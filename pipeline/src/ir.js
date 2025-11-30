@@ -73,10 +73,11 @@ function createBlock() {
   };
 }
 
-function createLetDecl(name, value) {
+function createLetDecl(name, value, type = null) {
   return {
     kind: 'let',
     name,
+    type: type || (value && value.type) || 'int',  // Infer from value if not provided
     value,
   };
 }
@@ -170,6 +171,77 @@ function createContinueStmt() {
   };
 }
 
+function createSpawnExpr(funcName) {
+  return {
+    kind: 'spawn',
+    type: 'thread',
+    funcName,
+  };
+}
+
+function createJoinStmt(handleName) {
+  return {
+    kind: 'join',
+    handleName,
+  };
+}
+
+function createSharedDecl(name, type, initialValue) {
+  return {
+    kind: 'shared',
+    name,
+    type,
+    value: initialValue,
+  };
+}
+
+function createAtomicAddStmt(sharedVar, value) {
+  return {
+    kind: 'atomic_add',
+    sharedVar,
+    value,  // IRExpression
+  };
+}
+
+function createAtomicLoadExpr(sharedVar, type) {
+  return {
+    kind: 'atomic_load',
+    type,
+    sharedVar,
+  };
+}
+
+// Input expression: input() -> int
+function createInputExpr(type) {
+  return {
+    kind: 'input',
+    type,
+  };
+}
+
+// Math function call: sqrt(x), pow(x, n) -> float
+function createMathCall(func, args) {
+  return {
+    kind: 'math_call',
+    func,  // 'sqrt', 'pow', etc.
+    args,
+    type: 'float',
+  };
+}
+
+// General atomic expression/statement
+// op: 'add', 'fadd', 'sub', 'load', 'store', 'cas'
+function createAtomicExpr(op, target, value, expected, newValue) {
+  return {
+    kind: 'atomic_op',
+    operation: op,
+    target,      // variable name
+    value,       // for add, sub, store
+    expected,    // for cas
+    newValue,    // for cas
+  };
+}
+
 function createUnaryExpr(operator, operand, type) {
   return {
     kind: 'unary',
@@ -197,10 +269,28 @@ function createArrayAccessExpr(array, index, elementType) {
   };
 }
 
+function createArrayAssignStmt(arrayName, index, value) {
+  return {
+    kind: 'array_assign',
+    arrayName,   // string - name of the array variable
+    index,       // IRExpression - index expression
+    value,       // IRExpression - value to assign
+  };
+}
+
 function createCallExpr(functionName, args, returnType = 'int') {
   return {
     kind: 'call',
     type: returnType,
+    functionName,
+    args,
+  };
+}
+
+// Call statement (function call without using return value)
+function createCallStmt(functionName, args) {
+  return {
+    kind: 'call_stmt',
     functionName,
     args,
   };
@@ -214,6 +304,15 @@ function createFunctionDecl(name, params, returnType, body, localDecls = []) {
     returnType,
     body,        // IRBlock
     localDecls,  // Local variable declarations within the function
+  };
+}
+
+function createCastExpr(targetType, sourceExpr) {
+  return {
+    kind: 'cast',
+    type: targetType,  // Target type after conversion
+    targetType,        // e.g., 'int', 'float'
+    sourceExpr,        // The expression to convert
   };
 }
 
@@ -343,10 +442,21 @@ module.exports = {
   createReturnStmt,
   createBreakStmt,
   createContinueStmt,
+  createSpawnExpr,
+  createJoinStmt,
+  createSharedDecl,
+  createAtomicAddStmt,
+  createAtomicLoadExpr,
+  createInputExpr,
+  createMathCall,
+  createAtomicExpr,
   createCallExpr,
+  createCallStmt,
   createFunctionDecl,
   createArrayLiteralExpr,
   createArrayAccessExpr,
+  createArrayAssignStmt,
+  createCastExpr,
   
   // Utilities
   walkProgram,

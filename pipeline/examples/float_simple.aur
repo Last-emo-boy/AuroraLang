@@ -1,0 +1,6 @@
+// Simple float print test
+fn main() -> int {
+    let x: float = 3.14;
+    print(x);
+    return 0;
+}

@@ -1,0 +1,15 @@
+// Float printing comprehensive test
+fn main() -> int {
+    let pi: float = 3.14159;
+    let neg: float = -2.5;
+    let zero: float = 0.0;
+    let one: float = 1.0;
+    let small: float = 0.001;
+
+    print(pi);
+    print(neg);
+    print(zero);
+    print(one);
+    print(small);
+    return 0;
+}

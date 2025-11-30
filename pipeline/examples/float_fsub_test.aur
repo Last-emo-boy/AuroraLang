@@ -1,0 +1,8 @@
+// Simple fsub test
+fn main() -> int {
+    let a: float = 5.5;
+    let b: float = 2.5;
+    let diff: float = a - b;
+    print(diff);
+    return 0;
+}

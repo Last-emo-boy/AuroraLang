@@ -1,0 +1,27 @@
+module demo {
+    fn main() -> int {
+        // Test with 8 float variables - exceeds 6 XMM registers
+        let a: float = 1.0;
+        let b: float = 2.0;
+        let c: float = 3.0;
+        let d: float = 4.0;
+        let e: float = 5.0;
+        let f: float = 6.0;
+        let g: float = 7.0;  // 7th variable - needs spilling
+        let h: float = 8.0;  // 8th variable - needs spilling
+        
+        // Use all variables
+        let sum: float = a + b;
+        sum = sum + c;
+        sum = sum + d;
+        sum = sum + e;
+        sum = sum + f;
+        sum = sum + g;
+        sum = sum + h;
+        
+        request service print_float(sum);
+        
+        request service exit(0);
+        return 0;
+    }
+}

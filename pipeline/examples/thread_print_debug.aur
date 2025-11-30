@@ -1,0 +1,12 @@
+// Test: check if worker thread executes by printing
+// Expected: prints "A" then exits with 0
+
+fn worker() {
+  print("A");
+}
+
+fn main() -> int {
+  let t1: thread = spawn worker();
+  join t1;
+  return 0;
+}

@@ -1,0 +1,13 @@
+// Test: main thread does atomic add via function call
+// Expected: 5
+
+shared counter: int = 0;
+
+fn adder() {
+  atomic.add(counter, 5);
+}
+
+fn main() -> int {
+  adder();
+  return atomic.load(counter);
+}

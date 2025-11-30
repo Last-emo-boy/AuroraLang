@@ -1,0 +1,18 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: .\pipeline\examples\atomic_call_test.aur
+
+# Shared variables
+shared 0 counter 0
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0106FF0000000005  ; mov r6, #5
+bytes 0x3400060000000000  ; atomic_add shared[0], r6 ; counter += ...
+bytes 0x0A00000000000000  ; ret ; implicit return
+bytes 0x09FE000000000000  ; call fn_adder ; adder()
+bytes 0x3206000000000000  ; atomic_load r6, shared[0] ; counter
+bytes 0x0100060000000000  ; mov r0, r6 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_adder 1
+label fn_main 4

@@ -1,0 +1,21 @@
+// Correct Machin formula calculation with more iterations
+fn main() {
+    let x: float = 0.2;
+    let x2: float = 0.04;
+    let term: float = x;
+    let sum: float = x;
+    let n: float = 1.0;
+    
+    while n < 51.0 {
+        term = term * x2;
+        term = term * -1.0;
+        n = n + 2.0;
+        sum = sum + term / n;
+    }
+    
+    sum = sum * 16.0;
+    sum = sum - 0.0167364016736;
+    
+    print(sum);
+    return 0;
+}

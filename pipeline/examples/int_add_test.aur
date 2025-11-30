@@ -1,0 +1,14 @@
+module test {
+    fn main() -> int {
+        let result: int = 0;
+        
+        // First add
+        result = result + 10;
+        
+        // Second add
+        result = result + 5;
+        
+        // Expected: 15
+        return result;
+    }
+}

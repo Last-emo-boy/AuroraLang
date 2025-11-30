@@ -1,0 +1,18 @@
+// Simple arctan(1/5) calculation for Pi approximation
+fn main() {
+    let term: float = 0.2;
+    let sum: float = 0.2;
+    let n: float = 3.0;
+    
+    while n < 55.0 {
+        term = term * 0.04;
+        sum = sum + term / n;
+        n = n + 2.0;
+        term = term * -1.0;
+    }
+    
+    let pi: float = sum * 16.0;
+    pi = pi - 0.0167364;
+    print(pi);
+    return 0;
+}

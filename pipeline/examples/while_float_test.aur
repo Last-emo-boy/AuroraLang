@@ -1,0 +1,12 @@
+fn main() {
+    let x: float = 1.0;
+    let sum: float = 0.0;
+    
+    while x < 5.0 {
+        sum = sum + x;
+        x = x + 1.0;
+    }
+    
+    print(sum);
+    return 0;
+}

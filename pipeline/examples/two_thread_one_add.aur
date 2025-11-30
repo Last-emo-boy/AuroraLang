@@ -1,0 +1,20 @@
+// Test: two spawned threads, only first does atomic add
+// Expected: 5
+
+shared counter: int = 0;
+
+fn worker1() {
+  atomic.add(counter, 5);
+}
+
+fn worker2() {
+  // do nothing
+}
+
+fn main() -> int {
+  let t1: thread = spawn worker1();
+  let t2: thread = spawn worker2();
+  join t1;
+  join t2;
+  return atomic.load(counter);
+}

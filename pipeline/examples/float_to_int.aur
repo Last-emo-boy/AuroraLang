@@ -1,0 +1,6 @@
+// Test float to int conversion only
+fn main() -> int {
+    let x: float = 3.14;
+    let i: int = x as int;
+    return i;
+}

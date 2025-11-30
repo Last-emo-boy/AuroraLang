@@ -1,0 +1,8 @@
+// Simple fmul test
+fn main() -> int {
+    let a: float = 5.5;
+    let b: float = 2.5;
+    let prod: float = a * b;
+    print(prod);
+    return 0;
+}

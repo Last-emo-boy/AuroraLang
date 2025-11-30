@@ -1,0 +1,13 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: .\pipeline\examples\atomic_load_only_test.aur
+
+# Shared variables
+shared 0 counter 10
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x3206000000000000  ; atomic_load r6, shared[0] ; counter
+bytes 0x0100060000000000  ; mov r0, r6 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1

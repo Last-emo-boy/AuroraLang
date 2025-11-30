@@ -431,7 +431,7 @@ class X86EncoderWin64 {
     this.emit(0, 0, 0, 0);  // Placeholder
   }
   
-  // Conditional jump rel32
+  // Conditional jump rel32 (for integer comparisons using SF/OF flags)
   jccRel32(condition, label) {
     // Condition codes for Jcc:
     // 0x01: eq (ZF=1)
@@ -447,6 +447,35 @@ class X86EncoderWin64 {
       0x04: 0x8E,  // JLE/JNG
       0x05: 0x8F,  // JG/JNLE
       0x06: 0x8D,  // JGE/JNL
+    };
+    
+    const opcode = ccMap[condition] || 0x84;
+    this.emit(0x0F, opcode);  // Jcc rel32
+    this.relocations.push({
+      offset: this.code.length,
+      label: label,
+      type: 'rel32',
+    });
+    this.emit(0, 0, 0, 0);  // Placeholder
+  }
+  
+  // Conditional jump rel32 for float comparisons (uses CF/ZF from UCOMISD)
+  // UCOMISD sets: ZF=1 if equal, CF=1 if less than, CF=0 & ZF=0 if greater than
+  jccFloatRel32(condition, label) {
+    // Map Aurora condition codes to unsigned/float comparison jumps
+    // 0x01: eq -> JE (ZF=1) -> 0x84
+    // 0x02: ne -> JNE (ZF=0) -> 0x85
+    // 0x03: lt -> JB (CF=1) -> 0x82
+    // 0x04: le -> JBE (CF=1 or ZF=1) -> 0x86
+    // 0x05: gt -> JA (CF=0 and ZF=0) -> 0x87
+    // 0x06: ge -> JAE (CF=0) -> 0x83
+    const ccMap = {
+      0x01: 0x84,  // JE/JZ (same as integer)
+      0x02: 0x85,  // JNE/JNZ (same as integer)
+      0x03: 0x82,  // JB/JNAE (below - for unsigned/float)
+      0x04: 0x86,  // JBE/JNA (below or equal)
+      0x05: 0x87,  // JA/JNBE (above - for unsigned/float)
+      0x06: 0x83,  // JAE/JNB (above or equal)
     };
     
     const opcode = ccMap[condition] || 0x84;
@@ -584,6 +613,186 @@ class X86EncoderWin64 {
   }
   
   // ========================
+  // Floating Point Instructions (SSE2)
+  // XMM registers: xmm0-xmm7 (use same number as Aurora xmm index)
+  // ========================
+  
+  // MOVSD xmm, xmm - move scalar double
+  movsdRegReg(destXmm, srcXmm) {
+    // F2 0F 10 /r  MOVSD xmm1, xmm2
+    this.emit(0xF2);
+    if (destXmm >= 8 || srcXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, srcXmm >= 8));
+    }
+    this.emit(0x0F, 0x10);
+    this.emit(this.modrm(3, destXmm & 7, srcXmm & 7));
+  }
+  
+  // MOVSD xmm, [rsp+offset] - load double from stack
+  movsdRegStack(destXmm, offset) {
+    // F2 0F 10 /r  MOVSD xmm1, m64
+    this.emit(0xF2);
+    if (destXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, 0));
+    }
+    this.emit(0x0F, 0x10);
+    this.emit(this.modrm(2, destXmm & 7, 4));  // mod=10, rm=100 (SIB)
+    this.emit(0x24);  // SIB: base=RSP
+    this.emitImm32(offset);
+  }
+  
+  // MOVSD [rsp+offset], xmm - store double to stack
+  movsdStackReg(offset, srcXmm) {
+    // F2 0F 11 /r  MOVSD m64, xmm1
+    this.emit(0xF2);
+    if (srcXmm >= 8) {
+      this.emit(this.rex(0, srcXmm >= 8, 0, 0));
+    }
+    this.emit(0x0F, 0x11);
+    this.emit(this.modrm(2, srcXmm & 7, 4));  // mod=10, rm=100 (SIB)
+    this.emit(0x24);  // SIB: base=RSP
+    this.emitImm32(offset);
+  }
+  
+  // Load immediate double into XMM via stack
+  // Uses RIP-relative or stack-based loading
+  movsdRegImm(destXmm, floatValue) {
+    // Store the float in data section and load from there
+    // For simplicity, we'll use a stack-based approach:
+    // 1. Store imm64 to stack using integer ops
+    // 2. Load from stack to XMM
+    const buffer = Buffer.alloc(8);
+    buffer.writeDoubleLE(floatValue, 0);
+    const lo = buffer.readUInt32LE(0);
+    const hi = buffer.readUInt32LE(4);
+    
+    // Use R11 as temp (Aurora r6)
+    // MOV R11, imm64
+    this.emit(0x49, 0xBB);  // REX.WB MOV R11, imm64
+    for (let i = 0; i < 8; i++) {
+      this.emit(buffer[i]);
+    }
+    
+    // MOV [RSP+tempOffset], R11 - use a temp location in stack
+    const tempOffset = 0x70;  // Use offset 112 as temp
+    this.emit(0x4C, 0x89, 0x5C, 0x24, tempOffset);  // MOV [RSP+0x70], R11
+    
+    // MOVSD xmm, [RSP+tempOffset]
+    this.movsdRegStack(destXmm, tempOffset);
+  }
+  
+  // ADDSD xmm, xmm - add scalar double
+  addsdRegReg(destXmm, srcXmm) {
+    // F2 0F 58 /r  ADDSD xmm1, xmm2
+    this.emit(0xF2);
+    if (destXmm >= 8 || srcXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, srcXmm >= 8));
+    }
+    this.emit(0x0F, 0x58);
+    this.emit(this.modrm(3, destXmm & 7, srcXmm & 7));
+  }
+  
+  // SUBSD xmm, xmm - subtract scalar double
+  subsdRegReg(destXmm, srcXmm) {
+    // F2 0F 5C /r  SUBSD xmm1, xmm2
+    this.emit(0xF2);
+    if (destXmm >= 8 || srcXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, srcXmm >= 8));
+    }
+    this.emit(0x0F, 0x5C);
+    this.emit(this.modrm(3, destXmm & 7, srcXmm & 7));
+  }
+  
+  // MULSD xmm, xmm - multiply scalar double
+  mulsdRegReg(destXmm, srcXmm) {
+    // F2 0F 59 /r  MULSD xmm1, xmm2
+    this.emit(0xF2);
+    if (destXmm >= 8 || srcXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, srcXmm >= 8));
+    }
+    this.emit(0x0F, 0x59);
+    this.emit(this.modrm(3, destXmm & 7, srcXmm & 7));
+  }
+  
+  // DIVSD xmm, xmm - divide scalar double
+  divsdRegReg(destXmm, srcXmm) {
+    // F2 0F 5E /r  DIVSD xmm1, xmm2
+    this.emit(0xF2);
+    if (destXmm >= 8 || srcXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, srcXmm >= 8));
+    }
+    this.emit(0x0F, 0x5E);
+    this.emit(this.modrm(3, destXmm & 7, srcXmm & 7));
+  }
+  
+  // UCOMISD xmm, xmm - compare unordered scalar doubles
+  ucomisdRegReg(xmm1, xmm2) {
+    // 66 0F 2E /r  UCOMISD xmm1, xmm2
+    this.emit(0x66);
+    if (xmm1 >= 8 || xmm2 >= 8) {
+      this.emit(this.rex(0, xmm1 >= 8, 0, xmm2 >= 8));
+    }
+    this.emit(0x0F, 0x2E);
+    this.emit(this.modrm(3, xmm1 & 7, xmm2 & 7));
+  }
+  
+  // CVTSI2SD xmm, r64 - convert 64-bit int to double
+  cvtsi2sdXmmReg(destXmm, srcReg) {
+    // F2 REX.W 0F 2A /r  CVTSI2SD xmm, r64
+    this.emit(0xF2);
+    const srcX64 = this.mapReg ? this.mapReg(srcReg) : srcReg;
+    this.emit(this.rex(1, destXmm >= 8, 0, srcX64 >= 8));
+    this.emit(0x0F, 0x2A);
+    this.emit(this.modrm(3, destXmm & 7, srcX64 & 7));
+  }
+  
+  // CVTSD2SI r64, xmm - convert double to 64-bit int (truncate)
+  cvtsd2siRegXmm(destReg, srcXmm) {
+    // F2 REX.W 0F 2D /r  CVTSD2SI r64, xmm
+    this.emit(0xF2);
+    const destX64 = this.mapReg ? this.mapReg(destReg) : destReg;
+    this.emit(this.rex(1, destX64 >= 8, 0, srcXmm >= 8));
+    this.emit(0x0F, 0x2D);
+    this.emit(this.modrm(3, destX64 & 7, srcXmm & 7));
+  }
+  
+  // CVTTSD2SI r64, xmm - convert double to 64-bit int (truncate toward zero)
+  cvttsd2siRegXmm(destReg, srcXmm) {
+    // F2 REX.W 0F 2C /r  CVTTSD2SI r64, xmm
+    this.emit(0xF2);
+    const destX64 = this.mapReg ? this.mapReg(destReg) : destReg;
+    this.emit(this.rex(1, destX64 >= 8, 0, srcXmm >= 8));
+    this.emit(0x0F, 0x2C);
+    this.emit(this.modrm(3, destX64 & 7, srcXmm & 7));
+  }
+  
+  // SQRTSD xmm1, xmm2 - square root of double
+  sqrtsdXmmXmm(destXmm, srcXmm) {
+    // F2 0F 51 /r  SQRTSD xmm1, xmm2/m64
+    this.emit(0xF2);
+    if (destXmm >= 8 || srcXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, srcXmm >= 8));
+    }
+    this.emit(0x0F, 0x51);
+    this.emit(this.modrm(3, destXmm & 7, srcXmm & 7));
+  }
+  
+  // Add float constant to data section (8-byte aligned)
+  addFloatConst(label, value) {
+    // Align to 8 bytes
+    while (this.dataSection.length % 8 !== 0) {
+      this.dataSection.push(0);
+    }
+    this.dataLabels.set(label, this.dataSection.length);
+    const buffer = Buffer.alloc(8);
+    buffer.writeDoubleLE(value, 0);
+    for (let i = 0; i < 8; i++) {
+      this.dataSection.push(buffer[i]);
+    }
+    return label;
+  }
+  
+  // ========================
   // Helper Functions
   // ========================
   
@@ -611,6 +820,115 @@ class X86EncoderWin64 {
     return label;
   }
   
+  // Add shared variable to data section (8-byte aligned for atomic operations)
+  addSharedVar(name, initialValue = 0) {
+    // Align to 8 bytes
+    while (this.dataSection.length % 8 !== 0) {
+      this.dataSection.push(0);
+    }
+    const label = `_shared_${name}`;
+    this.dataLabels.set(label, this.dataSection.length);
+    // Store 64-bit value
+    const value = BigInt(initialValue);
+    for (let i = 0; i < 8; i++) {
+      this.dataSection.push(Number((value >> BigInt(i * 8)) & 0xFFn));
+    }
+    return label;
+  }
+  
+  // Generate LOCK XADD instruction (atomic add and return old value)
+  // LOCK XADD [RBX], RAX - atomically adds RAX to [RBX], stores old value in RAX
+  lockXaddMem64Reg(memReg, srcReg) {
+    const memWin = this.mapReg(memReg);
+    const srcWin = this.mapReg(srcReg);
+    // LOCK prefix
+    this.emit(0xF0);
+    // REX.W for 64-bit
+    this.emit(this.rex(1, srcWin >= 8, 0, memWin >= 8));
+    // 0F C1 /r - XADD r/m64, r64
+    this.emit(0x0F, 0xC1);
+    this.emit(this.modrm(0, srcWin & 7, memWin & 7));  // mod=00 for [reg]
+  }
+  
+  // Generate MOV to memory with address in register
+  // MOV [destMemReg], srcReg
+  movMemReg64(destMemReg, srcReg) {
+    const destWin = this.mapReg(destMemReg);
+    const srcWin = this.mapReg(srcReg);
+    this.emit(this.rex(1, srcWin >= 8, 0, destWin >= 8));
+    this.emit(0x89);  // MOV r/m64, r64
+    this.emit(this.modrm(0, srcWin & 7, destWin & 7));
+  }
+  
+  // Generate MOV from memory with address in register
+  // MOV destReg, [srcMemReg]
+  movRegMem64(destReg, srcMemReg) {
+    const destWin = this.mapReg(destReg);
+    const srcWin = this.mapReg(srcMemReg);
+    this.emit(this.rex(1, destWin >= 8, 0, srcWin >= 8));
+    this.emit(0x8B);  // MOV r64, r/m64
+    this.emit(this.modrm(0, destWin & 7, srcWin & 7));
+  }
+  
+  // Generate LOCK XCHG for atomic store
+  // LOCK XCHG [RBX], RAX
+  lockXchgMem64Reg(memReg, srcReg) {
+    const memWin = this.mapReg(memReg);
+    const srcWin = this.mapReg(srcReg);
+    // LOCK prefix
+    this.emit(0xF0);
+    // REX.W for 64-bit
+    this.emit(this.rex(1, srcWin >= 8, 0, memWin >= 8));
+    // 87 /r - XCHG r/m64, r64
+    this.emit(0x87);
+    this.emit(this.modrm(0, srcWin & 7, memWin & 7));
+  }
+  
+  // Generate LOCK CMPXCHG instruction for atomic compare-and-swap
+  // LOCK CMPXCHG [memReg], newReg
+  // Compare RAX with [memReg], if equal store newReg in [memReg], else load [memReg] into RAX
+  // Returns: ZF=1 if exchange happened, ZF=0 otherwise
+  lockCmpxchgMem64Reg(memReg, newReg) {
+    const memWin = this.mapReg(memReg);
+    const newWin = this.mapReg(newReg);
+    // LOCK prefix
+    this.emit(0xF0);
+    // REX.W for 64-bit
+    this.emit(this.rex(1, newWin >= 8, 0, memWin >= 8));
+    // 0F B1 /r - CMPXCHG r/m64, r64
+    this.emit(0x0F, 0xB1);
+    this.emit(this.modrm(0, newWin & 7, memWin & 7));  // mod=00 for [reg]
+  }
+  
+  // JNE rel8 - jump if not equal (ZF=0), short form
+  jneRel8(rel8) {
+    this.emit(0x75, rel8 & 0xFF);
+  }
+  
+  // Return current code offset for calculating relative jumps
+  currentOffset() {
+    return this.code.length;
+  }
+  
+  // LEA reg, [RIP+disp32] - load effective address of label
+  // Used to get address of data section variables
+  leaRegRipLabel(destAurora, label) {
+    const dest = this.mapReg(destAurora);
+    // REX.W prefix for 64-bit
+    this.emit(this.rex(1, dest >= 8, 0, 0));
+    // 8D /r - LEA r64, m
+    this.emit(0x8D);
+    // ModR/M: mod=00, reg=dest, rm=101 (RIP-relative)
+    this.emit(this.modrm(0, dest & 7, 5));
+    // RIP-relative displacement
+    this.relocations.push({
+      offset: this.code.length,
+      label: label,
+      type: 'rel32',
+    });
+    this.emit(0, 0, 0, 0);  // Placeholder for 32-bit displacement
+  }
+  
   // Set import table address
   setImport(name, rva) {
     this.imports.set(name, rva);
@@ -627,7 +945,14 @@ class X86EncoderWin64 {
   }
   
   // Resolve relocations
-  resolve(codeBase, dataBase, iatBase) {
+  resolve(codeBase, dataBase, iatBase, debug = false) {
+    if (debug) {
+      console.log(`[resolve] codeBase=0x${codeBase.toString(16)}, dataBase=0x${dataBase.toString(16)}`);
+      console.log(`[resolve] labels:`, [...this.labels.entries()]);
+      console.log(`[resolve] dataLabels:`, [...this.dataLabels.entries()]);
+      console.log(`[resolve] relocations count: ${this.relocations.length}`);
+    }
+    
     for (const reloc of this.relocations) {
       let target;
       
@@ -646,6 +971,10 @@ class X86EncoderWin64 {
         target = dataBase + this.dataLabels.get(reloc.label);
       } else {
         throw new Error(`Undefined label: ${reloc.label}`);
+      }
+      
+      if (debug) {
+        console.log(`[resolve] label=${reloc.label}, target=0x${target.toString(16)}, offset=${reloc.offset}`);
       }
       
       if (reloc.type === 'rel32') {

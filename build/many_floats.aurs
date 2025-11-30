@@ -1,0 +1,66 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: ../examples/many_floats.aur
+
+# Stack frame size: 288 bytes
+stack_size 288
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x2000FF0000000000  ; fmov xmm0, 1 ; a
+bytes 0x3FF0000000000000  ;   ; float64 1
+bytes 0x2001FF0000000000  ; fmov xmm1, 2 ; b
+bytes 0x4000000000000000  ;   ; float64 2
+bytes 0x2002FF0000000000  ; fmov xmm2, 3 ; c
+bytes 0x4008000000000000  ;   ; float64 3
+bytes 0x2003FF0000000000  ; fmov xmm3, 4 ; d
+bytes 0x4010000000000000  ;   ; float64 4
+bytes 0x2004FF0000000000  ; fmov xmm4, 5 ; e
+bytes 0x4014000000000000  ;   ; float64 5
+bytes 0x2005FF0000000000  ; fmov xmm5, 6 ; f
+bytes 0x4018000000000000  ;   ; float64 6
+bytes 0x27000000000000C8  ; fstore [RSP+200], xmm0 ; spill a
+bytes 0x2000FF0000000000  ; fmov xmm0, 7 ; g
+bytes 0x401C000000000000  ;   ; float64 7
+bytes 0x27010000000000D0  ; fstore [RSP+208], xmm1 ; spill b
+bytes 0x2001FF0000000000  ; fmov xmm1, 8 ; h
+bytes 0x4020000000000000  ;   ; float64 8
+bytes 0x27020000000000D8  ; fstore [RSP+216], xmm2 ; spill c
+bytes 0x26020000000000C8  ; fload xmm2, [RSP+200] ; reload a
+bytes 0x27030000000000E0  ; fstore [RSP+224], xmm3 ; spill d
+bytes 0x26030000000000D0  ; fload xmm3, [RSP+208] ; reload b
+bytes 0x2106020300000000  ; fadd xmm6, xmm2, xmm3
+bytes 0x27040000000000E8  ; fstore [RSP+232], xmm4 ; spill e
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sum
+bytes 0x27050000000000F0  ; fstore [RSP+240], xmm5 ; spill f
+bytes 0x26050000000000D8  ; fload xmm5, [RSP+216] ; reload c
+bytes 0x2106040500000000  ; fadd xmm6, xmm4, xmm5
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sum
+bytes 0x27000000000000F8  ; fstore [RSP+248], xmm0 ; spill g
+bytes 0x26000000000000E0  ; fload xmm0, [RSP+224] ; reload d
+bytes 0x2106040000000000  ; fadd xmm6, xmm4, xmm0
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sum
+bytes 0x2701000000000100  ; fstore [RSP+256], xmm1 ; spill h
+bytes 0x26010000000000E8  ; fload xmm1, [RSP+232] ; reload e
+bytes 0x2106040100000000  ; fadd xmm6, xmm4, xmm1
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sum
+bytes 0x2702000000000108  ; fstore [RSP+264], xmm2 ; spill a
+bytes 0x26020000000000F0  ; fload xmm2, [RSP+240] ; reload f
+bytes 0x2106040200000000  ; fadd xmm6, xmm4, xmm2
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sum
+bytes 0x2703000000000110  ; fstore [RSP+272], xmm3 ; spill b
+bytes 0x26030000000000F8  ; fload xmm3, [RSP+248] ; reload g
+bytes 0x2106040300000000  ; fadd xmm6, xmm4, xmm3
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sum
+bytes 0x2705000000000118  ; fstore [RSP+280], xmm5 ; spill c
+bytes 0x2605000000000100  ; fload xmm5, [RSP+256] ; reload h
+bytes 0x2106040500000000  ; fadd xmm6, xmm4, xmm5
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sum
+bytes 0x2006040000000000  ; fmov xmm6, xmm4 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x0100FF0000000000  ; mov r0, #0
+bytes 0x0B02000000000000  ; svc 0x02
+bytes 0x0106FF0000000000  ; mov r6, #0
+bytes 0x0100060000000000  ; mov r0, r6 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1

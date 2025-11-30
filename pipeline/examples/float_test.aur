@@ -1,0 +1,11 @@
+module test {
+    fn main() -> int {
+        let a: float = 3.14;
+        let b: float = 2.0;
+        let c: float = a + b;
+        let d: float = c * 2.0;
+        
+        let result: int = 0;
+        return result;
+    }
+}

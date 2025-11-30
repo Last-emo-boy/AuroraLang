@@ -1,0 +1,11 @@
+// io_simple.aur - Simplified I/O test
+module io_simple {
+
+fn main() {
+    // Test single integer
+    print(42);
+    
+    return 0;
+}
+
+} // module io_simple

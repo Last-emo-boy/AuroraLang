@@ -348,6 +348,9 @@ class PE64Generator {
         'ExitProcess',
         'GetStdHandle',
         'WriteFile',
+        'CreateThread',
+        'WaitForSingleObject',
+        'CloseHandle',
       ]
     };
   }

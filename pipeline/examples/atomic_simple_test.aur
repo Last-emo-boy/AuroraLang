@@ -1,0 +1,9 @@
+// Simple test: just atomic add and load without threads
+// Expected: 5
+
+shared counter: int = 0;
+
+fn main() -> int {
+  atomic.add(counter, 5);
+  return atomic.load(counter);
+}

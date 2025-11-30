@@ -1,0 +1,14 @@
+// Test: two spawned threads - no atomic ops, just check spawn/join
+// Expected: 42 (both threads should run, main returns constant)
+
+fn worker() {
+  // Do nothing, just make sure thread runs
+}
+
+fn main() -> int {
+  let t1: thread = spawn worker();
+  let t2: thread = spawn worker();
+  join t1;
+  join t2;
+  return 42;
+}

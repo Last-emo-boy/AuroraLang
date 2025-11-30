@@ -1,0 +1,6 @@
+// Simple xmm6 test
+fn main() -> int {
+    let a: float = 5.5;
+    print(a);
+    return 0;
+}

@@ -1,0 +1,6 @@
+module demo {
+    fn main() -> int {
+        request service exit(42);
+        return 42;
+    }
+}

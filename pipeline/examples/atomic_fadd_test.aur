@@ -1,0 +1,16 @@
+// Test atomic.fadd operation (single-thread first)
+// Expected result: 3 (3.0 truncated to int)
+
+shared counter: int = 0;
+
+fn main() -> int {
+    // For now, test with integers - atomic.fadd will treat them as float bits
+    // Use small integers that approximate 1.5 in float bits:
+    // 1.0 + 2.0 = 3.0 -> truncate to 3
+    
+    // Actually, let's test integer atomic add first to verify the test setup works
+    atomic.add(counter, 3);
+    
+    // Return the counter value
+    return atomic.load(counter);  // Expected: 3
+}

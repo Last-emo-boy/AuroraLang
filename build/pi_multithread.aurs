@@ -1,0 +1,121 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: pipeline/examples/pi_multithread.aur
+
+# Shared variables
+shared 0 sum 0
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x0101FF0000000000  ; mov r1, #0 ; i
+bytes 0x0102FF0000000000  ; mov r2, #0 ; partial
+bytes 0x0106010000000000  ; mov r6, r1
+bytes 0x0D0606FF00000004  ; mul r6, r6, #4
+bytes 0x0103060000000000  ; mov r3, r6 ; k
+bytes 0x0107FF0000000002  ; mov r7, #2
+bytes 0x0D07070300000000  ; mul r7, r7, r3
+bytes 0x040707FF00000001  ; add r7, r7, #1
+bytes 0x0104070000000000  ; mov r4, r7 ; denom
+bytes 0x0106FF0000002710  ; mov r6, #10000
+bytes 0x0E06060400000000  ; div r6, r6, r4
+bytes 0x0105060000000000  ; mov r5, r6 ; term
+bytes 0x0402020500000000  ; add r2, r2, r5
+bytes 0x040101FF00000001  ; add r1, r1, #1
+bytes 0x0601FF00000000FA  ; cmp r1, #250
+bytes 0x0801FE0000000000  ; cjmp eq, exit_1
+bytes 0x07FE000000000000  ; jmp loop_0
+bytes 0x3400020000000000  ; atomic_add shared[0], r2 ; sum += ...
+bytes 0x0A00000000000000  ; ret ; implicit return
+bytes 0x0101FF0000000000  ; mov r1, #0 ; i
+bytes 0x0102FF0000000000  ; mov r2, #0 ; partial
+bytes 0x0106010000000000  ; mov r6, r1
+bytes 0x0D0606FF00000004  ; mul r6, r6, #4
+bytes 0x040606FF00000001  ; add r6, r6, #1
+bytes 0x0103060000000000  ; mov r3, r6 ; k
+bytes 0x0107FF0000000002  ; mov r7, #2
+bytes 0x0D07070300000000  ; mul r7, r7, r3
+bytes 0x040707FF00000001  ; add r7, r7, #1
+bytes 0x0104070000000000  ; mov r4, r7 ; denom
+bytes 0x0106FF0000002710  ; mov r6, #10000
+bytes 0x0E06060400000000  ; div r6, r6, r4
+bytes 0x0105060000000000  ; mov r5, r6 ; term
+bytes 0x0502020500000000  ; sub r2, r2, r5
+bytes 0x040101FF00000001  ; add r1, r1, #1
+bytes 0x0601FF00000000FA  ; cmp r1, #250
+bytes 0x0801FE0000000000  ; cjmp eq, exit_3
+bytes 0x07FE000000000000  ; jmp loop_2
+bytes 0x3400020000000000  ; atomic_add shared[0], r2 ; sum += ...
+bytes 0x0A00000000000000  ; ret ; implicit return
+bytes 0x0101FF0000000000  ; mov r1, #0 ; i
+bytes 0x0102FF0000000000  ; mov r2, #0 ; partial
+bytes 0x0106010000000000  ; mov r6, r1
+bytes 0x0D0606FF00000004  ; mul r6, r6, #4
+bytes 0x040606FF00000002  ; add r6, r6, #2
+bytes 0x0103060000000000  ; mov r3, r6 ; k
+bytes 0x0107FF0000000002  ; mov r7, #2
+bytes 0x0D07070300000000  ; mul r7, r7, r3
+bytes 0x040707FF00000001  ; add r7, r7, #1
+bytes 0x0104070000000000  ; mov r4, r7 ; denom
+bytes 0x0106FF0000002710  ; mov r6, #10000
+bytes 0x0E06060400000000  ; div r6, r6, r4
+bytes 0x0105060000000000  ; mov r5, r6 ; term
+bytes 0x0402020500000000  ; add r2, r2, r5
+bytes 0x040101FF00000001  ; add r1, r1, #1
+bytes 0x0601FF00000000FA  ; cmp r1, #250
+bytes 0x0801FE0000000000  ; cjmp eq, exit_5
+bytes 0x07FE000000000000  ; jmp loop_4
+bytes 0x3400020000000000  ; atomic_add shared[0], r2 ; sum += ...
+bytes 0x0A00000000000000  ; ret ; implicit return
+bytes 0x0101FF0000000000  ; mov r1, #0 ; i
+bytes 0x0102FF0000000000  ; mov r2, #0 ; partial
+bytes 0x0106010000000000  ; mov r6, r1
+bytes 0x0D0606FF00000004  ; mul r6, r6, #4
+bytes 0x040606FF00000003  ; add r6, r6, #3
+bytes 0x0103060000000000  ; mov r3, r6 ; k
+bytes 0x0107FF0000000002  ; mov r7, #2
+bytes 0x0D07070300000000  ; mul r7, r7, r3
+bytes 0x040707FF00000001  ; add r7, r7, #1
+bytes 0x0104070000000000  ; mov r4, r7 ; denom
+bytes 0x0106FF0000002710  ; mov r6, #10000
+bytes 0x0E06060400000000  ; div r6, r6, r4
+bytes 0x0105060000000000  ; mov r5, r6 ; term
+bytes 0x0502020500000000  ; sub r2, r2, r5
+bytes 0x040101FF00000001  ; add r1, r1, #1
+bytes 0x0601FF00000000FA  ; cmp r1, #250
+bytes 0x0801FE0000000000  ; cjmp eq, exit_7
+bytes 0x07FE000000000000  ; jmp loop_6
+bytes 0x3400020000000000  ; atomic_add shared[0], r2 ; sum += ...
+bytes 0x0A00000000000000  ; ret ; implicit return
+bytes 0x3001FE0000000000  ; spawn r1, worker0 ; t0 = spawn worker0()
+bytes 0x3002FE0000000000  ; spawn r2, worker1 ; t1 = spawn worker1()
+bytes 0x3003FE0000000000  ; spawn r3, worker2 ; t2 = spawn worker2()
+bytes 0x3004FE0000000000  ; spawn r4, worker3 ; t3 = spawn worker3()
+bytes 0x3101000000000000  ; join r1 ; join t0
+bytes 0x3102000000000000  ; join r2 ; join t1
+bytes 0x3103000000000000  ; join r3 ; join t2
+bytes 0x3104000000000000  ; join r4 ; join t3
+bytes 0x3206000000000000  ; atomic_load r6, shared[0] ; sum
+bytes 0x0105060000000000  ; mov r5, r6 ; s = atomic.load(sum)
+bytes 0x0107050000000000  ; mov r7, r5
+bytes 0x0D0707FF00000004  ; mul r7, r7, #4
+bytes 0x1601FF0000000020  ; store r1 -> [RSP+32] ; spill t0
+bytes 0x0101070000000000  ; mov r1, r7 ; pi
+bytes 0x0106010000000000  ; mov r6, r1
+bytes 0x0E0606FF00000064  ; div r6, r6, #100
+bytes 0x1602FF0000000028  ; store r2 -> [RSP+40] ; spill t1
+bytes 0x0102060000000000  ; mov r2, r6 ; scaled
+bytes 0x0100020000000000  ; mov r0, r2 ; return value
+bytes 0x0C00000000000000  ; halt ; exit with return value
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_worker0 1
+label loop_0 3
+label exit_1 18
+label fn_worker1 20
+label loop_2 22
+label exit_3 38
+label fn_worker2 40
+label loop_4 42
+label exit_5 58
+label fn_worker3 60
+label loop_6 62
+label exit_7 78
+label fn_main 80

@@ -1,0 +1,14 @@
+// Test: spawn worker that stores a value
+// Expected: 42
+
+shared result: int = 0;
+
+fn worker() {
+  atomic.store(result, 42);
+}
+
+fn main() -> int {
+  let t1: thread = spawn worker();
+  join t1;
+  return atomic.load(result);
+}

@@ -1,0 +1,26 @@
+// Simple Pi Estimation using Leibniz Formula
+// Pi/4 = 1 - 1/3 + 1/5 - 1/7 + 1/9 - ...
+// With 1000 iterations, should get ~3.14
+
+module test {
+    fn main() -> int {
+        let sum: float = 0.0;
+        let sign: float = 1.0;
+        let divisor: float = 1.0;
+        let i: int = 0;
+        
+        while i < 1000 {
+            sum = sum + sign / divisor;
+            sign = sign * -1.0;
+            divisor = divisor + 2.0;
+            i = i + 1;
+        }
+        
+        // Pi = sum * 4
+        let pi_approx: float = sum * 4.0;
+        
+        // Return integer part (should be 3)
+        let result: int = pi_approx;
+        return result;
+    }
+}

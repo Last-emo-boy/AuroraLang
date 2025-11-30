@@ -1,0 +1,8 @@
+// Test: two prints with intermediate int operation
+let a: float = 3.14;
+let b: float = 2.71;
+let c: int = 0;
+
+print(a);
+c = 1;
+print(b);

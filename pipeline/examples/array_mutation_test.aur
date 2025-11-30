@@ -1,0 +1,24 @@
+// Array mutation test - modify array elements
+// Test: create array, modify some elements, sum them
+// Expected exit code: 25 (10 + 2 + 3 + 4 + 6) - changed arr[0] to 10, arr[4] to 6
+
+module test {
+    fn main() -> int {
+        let arr: array<int> = [1, 2, 3, 4, 5];
+        
+        // Modify first and last elements
+        arr[0] = 10;
+        arr[4] = 6;
+        
+        // Sum all elements
+        let a: int = arr[0];
+        let b: int = arr[1];
+        let c: int = arr[2];
+        let d: int = arr[3];
+        let e: int = arr[4];
+        
+        let sum: int = a + b + c + d + e;
+        
+        return sum;
+    }
+}

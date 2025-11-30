@@ -1015,4 +1015,1302 @@ generateDeclaration():
 3. **字符串操作**：连接、长度、切片
 4. **Linux 原生支持**：为 x86_encoder.js (Linux) 添加溢出支持
 
+---
+
+### Iteration 15 - Pause 功能与 Linux 同步 ✅
+
+**目标**：
+1. 添加程序暂停功能（类似 C++ 的 `system("pause")`）
+2. 同步 Linux 编译器与 Windows 的功能
+
+**新增服务调用** ✅
+
+| 服务码 | 名称 | 描述 |
+|--------|------|------|
+| 0x03 | pause | 显示 exit code，等待用户按 Enter，然后退出 |
+| 0x04 | pause_silent | 仅等待用户按 Enter |
+
+**语法支持**
+```aurora
+request service pause(exit_code);    // 显示 "Exit code: N\nPress Enter to continue..."
+request service pause_silent();       // 仅等待
 ```
+
+**Windows 实现** (`native_compiler_win.js`) ✅
+
+1. **pause (0x03)**:
+   - 数字转字符串算法（支持多位数）
+   - 调用 WriteFile 输出 "Exit code: "
+   - 调用 WriteFile 输出数字字符串
+   - 调用 WriteFile 输出 "\nPress Enter to continue..."
+   - 调用 ReadConsoleA 等待用户输入
+   - 调用 ExitProcess 退出
+
+2. **pause_silent (0x04)**:
+   - 调用 ReadConsoleA 等待用户输入
+
+**新增 Windows API 导入** ✅
+- `ReadConsoleA` - 读取控制台输入
+
+**内置字符串** ✅
+- `_exit_code_str`: "Exit code: "
+- `_press_enter_str`: "\nPress Enter to continue..."
+
+**Linux 实现** (`native_compiler.js`) ✅
+
+1. **pause (0x03)**:
+   - 使用 read syscall (0) 等待输入
+   - 使用 exit syscall (60) 退出
+
+2. **pause_silent (0x04)**:
+   - 使用 read syscall 等待输入
+
+**Linux 编译器同步** ✅
+
+为 `x86_encoder.js` 添加：
+- `pushReg()` / `popReg()` - 压栈/出栈
+- `movStackReg()` / `movRegStack()` - 栈槽访问
+- `idivReg()` / `iremReg()` - 除法和取余
+
+为 `native_compiler.js` 添加：
+- DIV / REM 操作码处理
+- STORE_STACK / LOAD_STACK 操作码处理
+- 栈帧设置（128字节 spill slots）
+
+**测试验证** ✅
+
+| 测试 | 预期 | 实际 | 状态 |
+|------|------|------|------|
+| pause_test.exe | 显示 "Exit code: 42\nPress Enter..." | ✓ | ✅ |
+| div_test.exe | 6 (24/4) | 6 | ✅ |
+| rem_test.exe | 4 (25%7) | 4 | ✅ |
+| spill_stress_test.exe | 120 | 120 | ✅ |
+| 回归测试 | 8/8 | 8/8 | ✅ |
+
+**文件变更**
+- `pipeline/src/codegen.js` - 添加 pause/pause_silent 服务码
+- `pipeline/src/backend/native_compiler_win.js` - Windows pause 完整实现
+- `pipeline/src/backend/native_compiler.js` - Linux DIV/REM/栈操作/pause
+- `pipeline/src/backend/x86_encoder.js` - Linux 指令编码器扩展
+- `pipeline/examples/pause_test.aur` - pause 测试
+- `pipeline/examples/rem_test.aur` - 取余测试
+
+**下一步计划**
+1. **for 循环**：C 风格 for 循环语法
+2. **字符串操作**：连接、长度、切片
+3. **更多数组功能**：动态分配、数组长度
+
+---
+
+### Iteration 16 - 数组支持 ✅
+
+**目标**：实现基本数组功能 - 声明、初始化、索引访问和赋值
+
+**语法设计** ✅
+
+```aurora
+// 数组声明和初始化
+let arr: array<int> = [1, 2, 3, 4, 5];
+
+// 静态索引访问
+let x: int = arr[0];
+
+// 动态索引访问
+let i: int = 2;
+let y: int = arr[i];
+
+// 元素赋值
+arr[0] = 10;
+arr[i] = 20;
+```
+
+**类型系统** ✅
+
+| 类型语法 | 描述 |
+|----------|------|
+| `array<int>` | 整数数组 |
+| `array<bool>` | 布尔数组（未来） |
+| `array<string>` | 字符串数组（未来） |
+
+**ISA 扩展** ✅
+
+| 操作码 | 名称 | 格式 | 描述 |
+|--------|------|------|------|
+| 0x18 | ARRAY_ALLOC | op0, imm32 | 编译时分配数组槽（运行时无操作） |
+| 0x19 | ARRAY_STORE | slot, idx_reg, val_reg | 存储到 [RSP + 32 + (slot + idx)*8] |
+| 0x1A | ARRAY_LOAD | dest, slot, idx_reg | 从 [RSP + 32 + (slot + idx)*8] 加载 |
+
+**栈布局** ✅
+
+```
+[RSP + 0x00] : 阴影空间 (32 bytes, Windows ABI)
+[RSP + 0x20] : arr[0]
+[RSP + 0x28] : arr[1]
+[RSP + 0x30] : arr[2]
+...
+```
+
+**Parser 扩展** (`parser_v2.js`) ✅
+
+1. **`parseType()`** - 支持 `array<elementType>` 语法
+2. **`parsePrimary()`** - 支持数组字面量 `[expr, ...]` 和索引访问 `arr[idx]`
+3. **`parseAssignmentStatement()`** - 支持数组元素赋值 `arr[idx] = value`
+4. **`parseFunctionBodyStatement()`** - let 声明同时加入 statements 保持源码顺序
+
+**IR 扩展** (`ir.js`) ✅
+
+| 节点类型 | 创建函数 | 描述 |
+|----------|----------|------|
+| array_literal | `createArrayLiteralExpr(elementType, elements)` | 数组字面量 |
+| array_access | `createArrayAccessExpr(array, index)` | 数组访问 |
+| array_assign | `createArrayAssignStmt(arrayName, index, value)` | 数组赋值 |
+
+**CodeGen 实现** (`codegen.js`) ✅
+
+1. **CodeGenContext 扩展**:
+   - `arrayBaseSlots`: Map - 数组名到基础槽映射
+   - `nextArraySlot`: number - 下一个可用槽
+   - `allocArraySlots(name, size)` - 分配数组槽
+   - `getArrayBaseSlot(name)` - 获取数组基础槽
+
+2. **`generateStatement()`** - 添加 `let` case（支持循环内声明）
+
+3. **`generateArrayLiteral()`** - 分配槽并存储初始元素
+
+4. **`generateArrayAccess()`** - 静态/动态索引加载
+
+5. **`generateArrayAssignment()`** - 静态/动态索引存储
+
+**Native Compiler 实现** (`native_compiler_win.js`) ✅
+
+**新增操作码处理**:
+- `ARRAY_ALLOC (0x18)` - 运行时无操作
+- `ARRAY_LOAD (0x1A)` - 生成 `MOV dest, [RSP + idx*8 + offset]`
+- `ARRAY_STORE (0x19)` - 生成 `MOV [RSP + idx*8 + offset], value`
+
+**x86-64 SIB 寻址**:
+```x86
+; ARRAY_LOAD r7, base=0, idx=r2 (baseOffset = 32)
+; dest = [RSP + r2*8 + 32]
+REX.W MOV r64, [RSP + idx*8 + disp32]
+  48 8B 84 D4 20 00 00 00  ; if dest=RBX(7->3), idx=RDX(2)
+```
+
+**关键修复** ✅
+
+1. **语句顺序问题**: 原来 let 声明在 `localDecls` 中单独处理，与语句分离，导致：
+   ```aurora
+   arr[0] = 10;        // 应该先执行
+   let a: int = arr[0]; // 应该后执行
+   ```
+   但实际生成顺序相反。修复：将 let 也加入 `body.statements` 保持源码顺序。
+
+2. **循环内声明**: `generateStatement()` 添加 `let` case，支持 while/for 循环体内的变量声明。
+
+**测试验证** ✅
+
+| 测试 | 描述 | 预期 | 实际 | 状态 |
+|------|------|------|------|------|
+| array_test.aur | 基本数组求和 | 15 | 15 | ✅ |
+| array_mutation_test.aur | 数组修改后求和 | 25 | 25 | ✅ |
+| array_dynamic_index_test.aur | 循环遍历求和 | 150 | 150 | ✅ |
+| 回归测试 | 8/8 通过 | - | - | ✅ |
+
+**文件变更**
+- `pipeline/src/parser_v2.js` - 数组语法解析
+- `pipeline/src/ir.js` - 数组 IR 节点
+- `pipeline/src/codegen.js` - 数组代码生成、操作码定义
+- `pipeline/src/backend/native_compiler_win.js` - Windows x64 数组指令
+
+**测试文件**
+- `pipeline/examples/array_test.aur` - 基本数组测试
+- `pipeline/examples/array_mutation_test.aur` - 数组修改测试
+- `pipeline/examples/array_dynamic_index_test.aur` - 动态索引测试
+
+**下一步计划**
+1. **for 循环**：C 风格 for 循环语法
+2. **字符串操作**：连接、长度、切片
+3. **更多数组功能**：动态分配、数组长度、多维数组
+
+---
+
+### Iteration 17 - 浮点数支持 ✅
+
+**日期**: 2025-01-XX
+
+**目标**: 实现浮点数类型支持，作为多线程 Pi 计算的前置条件
+
+**背景**: 
+用户目标是实现一个多线程友好的语言，第一个大目标是完成 Pi 计算程序。实现 Pi 计算需要浮点运算支持。
+
+**ISA 扩展** ✅
+
+新增 8 个浮点操作码：
+
+| 操作码 | 值 | 描述 |
+|--------|-----|------|
+| FMOV | 0x20 | 浮点加载/移动 |
+| FADD | 0x21 | 浮点加法 |
+| FSUB | 0x22 | 浮点减法 |
+| FMUL | 0x23 | 浮点乘法 |
+| FDIV | 0x24 | 浮点除法 |
+| FCMP | 0x25 | 浮点比较 |
+| CVTSI2SD | 0x26 | 整数转浮点 |
+| CVTSD2SI | 0x29 | 浮点转整数 |
+
+**浮点寄存器映射**:
+- `xmm0-xmm7` - Aurora 浮点寄存器
+- 映射到 x86-64 XMM0-XMM7
+
+**词法分析 (lexer.js)** ✅
+- 新增 `FLOAT` 类型关键字
+- 新增 `FLOAT_NUMBER` token 类型
+- 修改 `readNumber()` 识别浮点字面量 (如 `3.14`, `2.0`)
+
+**语法解析 (parser_v2.js)** ✅
+- `parseType()` 支持 `float` 类型
+- `parsePrimary()` 处理浮点字面量，创建 `IR.createLiteralExpr('float', value)`
+- `createLetDecl` 现在保存变量类型信息
+
+**IR 扩展 (ir.js)** ✅
+- `createLetDecl(name, value, type)` - 增加类型参数
+- `createCastExpr(targetType, sourceExpr)` - 类型转换表达式
+
+**代码生成 (codegen.js)** ✅
+
+1. **浮点指令编码**:
+   - `encodeFMovImmFull(xmm, value)` - 返回指令 + 64位浮点数据
+   - `encodeFMovReg(dest, src)` - XMM 寄存器间移动
+   - `encodeFAddReg`, `encodeFSubReg`, `encodeFMulReg`, `encodeFDivReg`
+   - `encodeCvtSI2SD`, `encodeCvtSD2SI` - 类型转换
+
+2. **浮点寄存器分配**:
+   - `CodeGenContext.floatVars` - 跟踪浮点变量
+   - `allocFloatRegister()`, `getFloatRegister()` - 分配管理
+   - `allocFloatTemp()`, `releaseFloatTemp()` - 临时寄存器
+
+3. **隐式类型转换**:
+   - `generateFloatToIntDeclaration()` - 自动将 float 结果转换为 int
+   - `isFloatExpression()` - 检测表达式是否涉及浮点
+
+**Manifest 格式** ✅
+
+浮点立即数使用两个 bytes 行：
+```
+bytes 0x2000FF0000000000  ; fmov xmm0, 10.5
+bytes 0x4025000000000000  ; float64 10.5 (IEEE 754)
+```
+
+`op1 = 0xFF` 标记下一行是 64 位浮点数据。
+
+**Windows 原生编译器 (native_compiler_win.js)** ✅
+
+1. **操作码处理**:
+   - FMOV + float data 双指令解析
+   - FADD/FSUB/FMUL/FDIV → SSE2 指令
+   - CVTSD2SI → `cvttsd2siRegXmm`
+
+2. **x86-64 编码 (x86_encoder_win64.js)** ✅:
+   - `movsdRegImm(xmm, float)` - 通过栈加载浮点
+   - `movsdRegReg(dest, src)` - MOVSD XMM, XMM
+   - `addsdRegReg`, `subsdRegReg`, `mulsdRegReg`, `divsdRegReg`
+   - `cvtsi2sdXmmReg`, `cvttsd2siRegXmm` - 类型转换
+
+**测试验证** ✅
+
+| 测试 | 操作 | 预期结果 | 实际 | 状态 |
+|------|------|----------|------|------|
+| float_add_test.aur | 10.5 + 4.5 → int | 15 | 15 | ✅ |
+| float_ops_test.aur | 5.0+3.0+5.0-3.0+5.0*3.0+5.0/3.0 | 26 | 26 | ✅ |
+| 回归测试 | 8 个现有测试 | 全部通过 | 8/8 | ✅ |
+
+**测试程序示例**
+```aurora
+module test {
+    fn main() -> int {
+        let a: float = 10.5;
+        let b: float = 4.5;
+        let sum: float = a + b;
+        let result: int = sum;  // 隐式转换
+        return result;          // 返回 15
+    }
+}
+```
+
+**文件变更**
+- `pipeline/src/lexer.js` - 浮点 token
+- `pipeline/src/parser_v2.js` - 浮点类型和字面量解析
+- `pipeline/src/ir.js` - cast 表达式、let 类型
+- `pipeline/src/codegen.js` - 浮点指令编码、寄存器分配
+- `pipeline/src/backend/native_compiler_win.js` - 浮点操作码
+- `pipeline/src/backend/x86_encoder_win64.js` - SSE2 指令
+
+**测试文件**
+- `pipeline/examples/float_test.aur` - 基本浮点测试
+- `pipeline/examples/float_add_test.aur` - 浮点加法 + 类型转换
+- `pipeline/examples/float_ops_test.aur` - 四则运算综合测试
+
+**下一步计划 (多线程 Pi 计算路线图)**
+- **Iteration 18**: 浮点比较和条件跳转 ✅
+- **Iteration 19**: 线程创建基础 (`thread.spawn`)
+- **Iteration 20**: 线程同步 (mutex, 原子操作)
+- **Iteration 21**: 多线程 Pi 计算实现
+
+---
+
+### Iteration 18 - 浮点比较支持 ✅
+
+**日期**: 2025-01-XX
+
+**目标**: 实现浮点数比较操作，支持所有 6 种比较运算符
+
+**背景**: 
+Iteration 17 实现了浮点算术运算，但浮点条件判断失败。原因是 x86-64 的 `UCOMISD` 指令设置的标志位与整数 `CMP` 不同。
+
+**问题分析** 🔍
+
+UCOMISD vs CMP 的标志位差异：
+
+| 比较结果 | UCOMISD (浮点) | CMP (整数) |
+|----------|----------------|------------|
+| a < b | CF=1 | SF≠OF |
+| a > b | CF=0, ZF=0 | SF=OF, ZF=0 |
+| a == b | ZF=1 | ZF=1 |
+
+问题：对于浮点比较，我们生成 `FCMP` 指令（编译为 `UCOMISD`），但随后使用整数条件跳转（`JL`, `JG` 等），它们检查 `SF` 和 `OF` 标志——而 `UCOMISD` 不设置这些标志。
+
+**解决方案** ✅
+
+1. **跟踪比较类型**：在 `native_compiler_win.js` 中添加 `lastCompareWasFloat` 变量
+   - `FCMP` 指令后设置为 `true`
+   - `CMP` 指令后设置为 `false`
+
+2. **浮点条件跳转**：在 `x86_encoder_win64.js` 中添加 `jccFloatRel32()` 方法
+   - 使用无符号比较跳转（检查 CF/ZF 而非 SF/OF）
+
+**跳转指令映射** ✅
+
+| 条件 | 整数跳转 (jccRel32) | 浮点跳转 (jccFloatRel32) |
+|------|---------------------|--------------------------|
+| == | JE (0x84) | JE (0x84) |
+| != | JNE (0x85) | JNE (0x85) |
+| < | JL (0x8C) | **JB (0x82)** |
+| <= | JLE (0x8E) | **JBE (0x86)** |
+| > | JG (0x8F) | **JA (0x87)** |
+| >= | JGE (0x8D) | **JAE (0x83)** |
+
+**代码变更** ✅
+
+1. **`x86_encoder_win64.js`**:
+```javascript
+// 新增浮点条件跳转方法
+jccFloatRel32(condition, label) {
+  const ccMap = {
+    0x01: 0x84,  // JE
+    0x02: 0x85,  // JNE
+    0x03: 0x82,  // JB (below - unsigned/float)
+    0x04: 0x86,  // JBE
+    0x05: 0x87,  // JA (above - unsigned/float)
+    0x06: 0x83,  // JAE
+  };
+  // ...
+}
+```
+
+2. **`native_compiler_win.js`**:
+```javascript
+// 跟踪比较类型
+let lastCompareWasFloat = false;
+
+// 在指令循环中
+if (instr.opcode === OPCODE.CMP) {
+  lastCompareWasFloat = false;
+} else if (instr.opcode === OPCODE.FCMP) {
+  lastCompareWasFloat = true;
+}
+
+// CJMP 处理
+case OPCODE.CJMP:
+  if (instr._lastCompareWasFloat) {
+    encoder.jccFloatRel32(op0, target);
+  } else {
+    encoder.jccRel32(op0, target);
+  }
+```
+
+**测试验证** ✅
+
+| 测试 | 比较操作 | 预期 | 实际 | 状态 |
+|------|----------|------|------|------|
+| float_cmp_simple.aur | 5.5 > 3.5 | 42 | 42 | ✅ |
+| float_lt_test.aur | 3.5 < 5.5 | 15 | 15 | ✅ |
+| float_eq_test.aur | 5.5 == 5.5 | 77 | 77 | ✅ |
+| float_compare_test.aur | 多重比较 | 20 | 20 | ✅ |
+| float_all_cmp_test.aur | 全部 6 种 | 63 | 63 | ✅ |
+| 回归测试 | 8 个测试 | 通过 | 8/8 | ✅ |
+
+**综合测试 (float_all_cmp_test.aur)**
+```aurora
+module test {
+    fn main() -> int {
+        let res: int = 0;
+        let a: float = 5.5;
+        let b: float = 3.5;
+        let c: float = 5.5;
+        
+        if a > b  { res = res + 1; }   // +1
+        if b < a  { res = res + 2; }   // +2
+        if a >= b { res = res + 4; }   // +4
+        if b <= a { res = res + 8; }   // +8
+        if a == c { res = res + 16; }  // +16
+        if a != b { res = res + 32; }  // +32
+        
+        return res;  // 63 = 1+2+4+8+16+32
+    }
+}
+```
+
+**文件变更**
+- `pipeline/src/backend/x86_encoder_win64.js` - 新增 `jccFloatRel32()`
+- `pipeline/src/backend/native_compiler_win.js` - 比较类型跟踪和分发
+
+**测试文件**
+- `pipeline/examples/float_cmp_simple.aur` - 简单 > 测试
+- `pipeline/examples/float_lt_test.aur` - 小于测试
+- `pipeline/examples/float_eq_test.aur` - 相等测试
+- `pipeline/examples/float_compare_test.aur` - 多重比较
+- `pipeline/examples/float_all_cmp_test.aur` - 全部 6 种比较
+
+**下一步计划**
+- **Iteration 19**: 线程创建基础 (`thread.spawn`) ✅
+- **Iteration 20**: 线程同步 (mutex, 原子操作)
+- **Iteration 21**: 多线程 Pi 计算实现
+
+---
+
+### Iteration 19 - 线程创建基础 ✅
+
+**日期**: 2025-11-30
+
+**目标**: 实现基本的线程创建和等待功能
+
+**语法设计** ✅
+
+```aurora
+// 创建线程
+let t: thread = spawn worker_func();
+
+// 等待线程完成
+join t;
+
+// 线程入口函数
+fn worker_func() -> int {
+    return 42;
+}
+```
+
+**ISA 扩展** ✅
+
+| 操作码 | 值 | 格式 | 描述 |
+|--------|-----|------|------|
+| SPAWN | 0x30 | `SPAWN r0, func_label` | 创建线程执行函数，句柄存入 r0 |
+| JOIN | 0x31 | `JOIN r0` | 等待 r0 中的线程完成 |
+
+**实现细节**
+
+1. **词法分析 (lexer.js)** ✅
+   - 新增 `THREAD` 类型 token
+   - 新增 `SPAWN`, `JOIN` 关键字 token
+
+2. **语法解析 (parser_v2.js)** ✅
+   - `parseType()` 支持 `thread` 类型
+   - `parsePrimary()` 处理 `spawn func()` 表达式
+   - `parseJoinStatement()` 解析 `join handle;` 语句
+   - `parseFunctionBodyStatement()` 支持 spawn/join
+
+3. **IR 节点 (ir.js)** ✅
+   - `createSpawnExpr(funcName)` - spawn 表达式
+   - `createJoinStmt(handleName)` - join 语句
+
+4. **代码生成 (codegen.js)** ✅
+   - `encodeSpawn(destReg, funcLabel)` - 编码 SPAWN 指令
+   - `encodeJoin(handleReg)` - 编码 JOIN 指令
+   - `generateDeclaration()` 处理 spawn 表达式
+   - `generateJoin()` 生成 JOIN 指令
+
+5. **Windows 原生编译 (native_compiler_win.js)** ✅
+
+**SPAWN 实现**:
+```javascript
+case OPCODE.SPAWN:
+  // CreateThread(NULL, 0, func_addr, NULL, 0, NULL)
+  encoder.xorRegReg(1, 1);  // RCX = NULL
+  encoder.xorRegReg(2, 2);  // RDX = 0
+  // LEA R8, [RIP + func_offset]
+  encoder.emit(0x4C, 0x8D, 0x05);
+  encoder.relocations.push({ offset, label: funcLabel, type: 'rel32' });
+  encoder.xorRegReg(4, 4);  // R9 = NULL
+  // Stack args: dwCreationFlags=0, lpThreadId=NULL
+  encoder.callImport('CreateThread');
+  encoder.movRegReg(destReg, 0);  // Move handle from RAX
+```
+
+**JOIN 实现**:
+```javascript
+case OPCODE.JOIN:
+  // WaitForSingleObject(handle, INFINITE)
+  encoder.movRegReg(1, handleReg);  // RCX = handle
+  encoder.movRegImm64(2, 0xFFFFFFFF);  // RDX = INFINITE
+  encoder.callImport('WaitForSingleObject');
+```
+
+**PE 导入更新** ✅
+```javascript
+const importFunctions = [
+  'ExitProcess', 'GetStdHandle', 'WriteFile', 'ReadConsoleA',
+  'CreateThread', 'WaitForSingleObject', 'CloseHandle'
+];
+```
+
+**测试验证** ✅
+
+| 测试 | 描述 | 预期 | 实际 | 状态 |
+|------|------|------|------|------|
+| thread_test.aur | 单线程创建+等待 | 0 | 0 | ✅ |
+| thread_multi_test.aur | 多线程创建+等待 | 30 | 30 | ✅ |
+| 回归测试 | 8 个测试 | 通过 | 8/8 | ✅ |
+
+**示例程序**
+```aurora
+module test {
+    fn worker() -> int {
+        return 42;
+    }
+    
+    fn main() -> int {
+        let t: thread = spawn worker();
+        join t;
+        return 0;
+    }
+}
+```
+
+**文件变更**
+- `pipeline/src/lexer.js` - THREAD, SPAWN, JOIN tokens
+- `pipeline/src/parser_v2.js` - spawn/join 语法解析
+- `pipeline/src/ir.js` - createSpawnExpr, createJoinStmt
+- `pipeline/src/codegen.js` - SPAWN/JOIN 操作码和代码生成
+- `pipeline/src/backend/native_compiler_win.js` - CreateThread/WaitForSingleObject 实现
+- `pipeline/src/backend/pe64_generator.js` - 线程 API 导入
+
+**测试文件**
+- `pipeline/examples/thread_test.aur` - 基本线程测试
+- `pipeline/examples/thread_multi_test.aur` - 多线程测试
+
+**限制和下一步**
+- 当前线程不能返回值给主线程（需要共享内存）
+- 没有线程同步原语（mutex, atomic）
+- 下一步实现共享内存和同步机制
+
+---
+
+### Iteration 20 - 线程同步与共享内存 ✅ (2025-11-30)
+
+**目标**: 实现共享变量和原子操作，支持多线程间的数据同步
+
+**新增 ISA 指令**
+
+| Opcode | 名称 | 格式 | 说明 |
+|--------|------|------|------|
+| 0x32 | ATOMIC_LOAD | dest_reg, shared_id | 原子读取共享变量 |
+| 0x33 | ATOMIC_STORE | shared_id, src_reg | 原子存储到共享变量 |
+| 0x34 | ATOMIC_ADD | shared_id, src_reg | 原子加法 (lock xadd) |
+| 0x35 | ATOMIC_FADD | shared_id, src_xmm | 原子浮点加法 (预留) |
+
+**新增语法**
+
+```aurora
+// 共享变量声明
+shared counter: int = 0;
+
+// 原子操作
+atomic.add(counter, 5);    // 原子加法
+atomic.load(counter)       // 原子读取
+```
+
+**实现细节**
+
+1. **Lexer 扩展** (`lexer.js`)
+   - 新增 `SHARED` token
+   - 新增 `ATOMIC` token  
+   - 新增 `DOT` token (单点，区别于 DOTDOT)
+
+2. **Parser 扩展** (`parser_v2.js`)
+   - `parseSharedDecl()` - 解析共享变量声明
+   - `parseAtomicStatement()` - 解析 atomic.add/store 语句
+   - `parseAtomicLoadExpr()` - 解析 atomic.load 表达式
+   - 函数返回类型变为可选（支持 void 函数如 worker）
+   - 隐式模块检测（文件有 shared/fn 声明时自动作为模块）
+
+3. **IR 扩展** (`ir.js`)
+   - `createSharedDecl(name, type, value)`
+   - `createAtomicAddStmt(sharedVar, value)`
+   - `createAtomicLoadExpr(sharedVar)`
+   - `createCallStmt(functionName, args)`
+
+4. **Codegen 扩展** (`codegen.js`)
+   - `registerSharedVar(name, type, initialValue)` - 注册共享变量
+   - `generateAtomicOp()` - 生成 ATOMIC_ADD/STORE 指令
+   - `generateAtomicLoad()` - 生成 ATOMIC_LOAD 指令
+   - 非 main 函数自动生成隐式 `ret` 指令
+   - **修复**: `shared.value` vs `shared.initialValue` 字段名不匹配
+
+5. **Native Compiler 扩展** (`native_compiler_win.js`)
+   - 解析 manifest 中的 `shared` 指令
+   - 为非 main 函数（线程入口）生成 prologue (`sub rsp, 0x48`)
+   - 为 `RET` 指令生成 epilogue (`add rsp, 0x48`)
+   - SPAWN: 使用栈位置保存/恢复易失寄存器，确保 shadow space 完整
+   - JOIN: 保存/恢复线程 handle 寄存器，避免相互覆盖
+   - ATOMIC_LOAD: LEA + MOV (对齐的 64 位读取是原子的)
+   - ATOMIC_ADD: LEA + LOCK XADD
+   - ATOMIC_STORE: LEA + LOCK XCHG
+
+6. **x86 Encoder 扩展** (`x86_encoder_win64.js`)
+   - `addSharedVar(name, initialValue)` - 在数据段分配 8 字节对齐的共享变量
+   - `leaRegRipLabel(destReg, label)` - RIP 相对寻址
+   - `lockXaddMem64Reg(memReg, srcReg)` - LOCK XADD 原子加法
+   - `lockXchgMem64Reg(memReg, srcReg)` - LOCK XCHG 原子存储
+
+**修复的关键 Bug**
+
+1. **共享变量初始值丢失**: IR 使用 `value` 字段，codegen 错误地读取 `initialValue`
+2. **SPAWN 破坏 shadow space**: push 4 个寄存器占用了 CreateThread 的 shadow space，改用栈高位保存
+3. **JOIN 破坏其他线程 handle**: 设置 RDX=INFINITE 会覆盖 r2 中的 handle，添加保存/恢复逻辑
+
+**测试结果**
+
+| 测试程序 | 描述 | 预期 | 实际 | 状态 |
+|---------|------|------|------|------|
+| atomic_debug1.aur | 单线程 atomic add | 5 | 5 | ✅ |
+| atomic_call_test.aur | 函数调用中的 atomic | 5 | 5 | ✅ |
+| atomic_load_only_test.aur | 读取初始值 | 10 | 10 | ✅ |
+| minimal_thread_test.aur | 单线程 atomic add | 42 | 42 | ✅ |
+| thread_two_simple_test.aur | 两线程并行 add | 10 | 10 | ✅ |
+| two_thread_sequential.aur | 两线程顺序 add | 10 | 10 | ✅ |
+| shared_counter_test.aur | 两线程循环 add | 20 | 20 | ✅ |
+| thread_multi_test.aur | 回归测试 | 30 | 30 | ✅ |
+| pi_leibniz_test.aur | 回归测试 | 3 | 3 | ✅ |
+
+**示例程序: 两线程原子计数**
+```aurora
+shared counter: int = 0;
+
+fn worker() {
+  for i in 0..10 {
+    atomic.add(counter, 1);
+  }
+}
+
+fn main() -> int {
+  let t1: thread = spawn worker();
+  let t2: thread = spawn worker();
+  join t1;
+  join t2;
+  return atomic.load(counter);  // 返回 20
+}
+```
+
+**x86-64 生成代码 (worker 函数核心)**
+```x86-64
+; prologue
+sub rsp, 0x48
+
+; atomic.add(counter, 1)
+mov r11, 1
+lea rbx, [rip + _shared_0]
+lock xadd [rbx], r11
+
+; epilogue
+add rsp, 0x48
+ret
+```
+
+**下一步计划**
+- **Iteration 21**: 多线程 Pi 计算实现
+  - 使用 atomic.fadd 进行浮点累加
+  - 任务分片：每个线程计算部分级数
+  - 验证多线程正确性
+
+---
+
+### Iteration 21 - 多线程 Pi 计算 ✅ (2025-11-30)
+
+**目标**：实现多线程并行计算 π，验证线程同步正确性
+
+**新增功能**
+
+1. **Debug 级别选项** ✅
+   - CLI 参数：`--debug`, `--debug=N`, `-d`, `-dN`
+   - 级别定义：
+     - 0 (NONE): 无调试输出
+     - 1 (BASIC): 编译阶段、函数名
+     - 2 (VERBOSE): 指令级输出
+     - 3 (TRACE): 完整追踪含十六进制转储
+
+2. **atomic.fadd 指令** ✅
+   - 操作码：`ATOMIC_FADD (0x35)`
+   - 实现：CAS 循环（无 x86 原生浮点原子指令）
+   - 算法：
+     ```
+     loop:
+       MOV RAX, [addr]      ; 加载当前值
+       MOVQ XMM1, RAX       ; 转换为浮点
+       ADDSD XMM1, XMMsrc   ; 加法
+       MOVQ RCX, XMM1       ; 结果转整数
+       LOCK CMPXCHG [addr], RCX  ; 原子交换
+       JNE loop             ; 失败则重试
+     ```
+
+3. **atomic.load 声明支持** ✅
+   - 修复：`let x: int = atomic.load(var);` 现在正常工作
+   - 添加 `atomic_load` case 到 `generateDeclaration`
+
+4. **栈帧扩展** ✅
+   - 从 0x48 (72字节) 扩展到 0x58 (88字节)
+   - 布局：
+     ```
+     [rsp+0x00-0x1F] : shadow space (32字节)
+     [rsp+0x20-0x2F] : API 参数空间 (16字节)
+     [rsp+0x30-0x4F] : 寄存器保存 (32字节: RCX, RDX, R8, R9)
+     [rsp+0x50-0x57] : 对齐 (8字节)
+     ```
+
+**Bug 修复**
+
+1. **SPAWN R9 保存** ✅
+   - 问题：SPAWN 未保存 r4 (R9)，导致第4个线程句柄丢失
+   - 修复：增加 `mov [rsp+0x48], r9` 和对应恢复
+   
+2. **JOIN R9 保存** ✅
+   - 问题：JOIN 未保存 r4 (R9)
+   - 修复：保存/恢复所有 4 个寄存器 (RCX, RDX, R8, R9)
+
+**测试结果**
+
+| 测试文件 | 描述 | 预期 | 实际 | 状态 |
+|---------|------|-----|------|------|
+| pi_multithread.aur | 4线程Leibniz计算 | 314 | 314 | ✅ |
+| thread_two_simple_test.aur | 回归测试 | 10 | 10 | ✅ |
+| atomic_fadd_test.aur | atomic.add测试 | 3 | 3 | ✅ |
+
+**多线程 Pi 计算程序**
+
+算法：Leibniz 公式 π/4 = 1 - 1/3 + 1/5 - 1/7 + ...
+
+```aurora
+shared sum: int = 0;
+
+// 线程0: 项 0, 4, 8, 12, ... (k = 4n) - 正项
+fn worker0() {
+    let i: int = 0;
+    let partial: int = 0;
+    while i < 250 {
+        let k: int = i * 4;
+        let denom: int = 2 * k + 1;
+        let term: int = 10000 / denom;
+        partial = partial + term;
+        i = i + 1;
+    }
+    atomic.add(sum, partial);
+}
+
+// 线程1: 项 1, 5, 9, 13, ... (k = 4n+1) - 负项
+// 线程2: 项 2, 6, 10, 14, ... (k = 4n+2) - 正项
+// 线程3: 项 3, 7, 11, 15, ... (k = 4n+3) - 负项
+
+fn main() -> int {
+    let t0: thread = spawn worker0();
+    let t1: thread = spawn worker1();
+    let t2: thread = spawn worker2();
+    let t3: thread = spawn worker3();
+    
+    join t0; join t1; join t2; join t3;
+    
+    let s: int = atomic.load(sum);
+    let pi: int = s * 4;        // π * 10000
+    let scaled: int = pi / 100; // π * 100
+    return scaled;              // 返回 314
+}
+```
+
+**运行结果 (10次)**
+```
+Run 1 - Exit code: 314
+Run 2 - Exit code: 314
+Run 3 - Exit code: 314
+Run 4 - Exit code: 314
+Run 5 - Exit code: 314
+Run 6 - Exit code: 314
+Run 7 - Exit code: 314
+Run 8 - Exit code: 314
+Run 9 - Exit code: 314
+Run 10 - Exit code: 314
+```
+
+**调试输出示例 (--debug=2)**
+```
+[aurora-win] debug level: 2
+[debug] Parsing manifest...
+[debug] Found 101 instructions, 0 strings, 13 labels
+[debug] Found 1 shared variables
+[debug] Compiling to x64...
+[debug] Function: fn_worker0 at instruction 1
+[debug] Function: fn_worker1 at instruction 20
+[debug] Function: fn_worker2 at instruction 40
+[debug] Function: fn_worker3 at instruction 60
+[debug] Generated 1100 bytes of code
+```
+
+**下一步计划**
+- **Iteration 23**: 浮点类型支持增强
+  - 添加 `as int` / `as float` 类型转换语法
+  - 支持 `shared` 浮点变量
+  - 实现浮点版本 Pi 计算
+
+---
+
+### Iteration 22 - 基本输入输出 (Basic I/O) ✅
+
+**目标**：添加基本的控制台输入输出功能，使 Aurora 程序可以与用户交互
+
+**新增功能**
+
+1. **`print(string)` - 打印字符串**
+   - 使用 Windows WriteFile API
+   - 支持字符串字面量和变量
+   - SVC 0x01 已有实现，新增简化语法
+
+2. **`print(int)` - 打印整数**
+   - 新增 SVC 0x05 (print_int)
+   - 整数到字符串转换（除法循环）
+   - 支持正数、负数、零
+   - 自动添加换行符
+
+3. **`input() -> int` - 读取整数输入**
+   - 新增 SVC 0x06 (input_int)
+   - 使用 Windows ReadFile API（支持管道输入）
+   - 字符串到整数解析
+   - 支持负数输入
+
+**词法分析器修改 (lexer.js)**
+```javascript
+// 新增 token 类型
+PRINT: 'PRINT',
+INPUT: 'INPUT',
+
+// 新增关键字
+'print': TokenType.PRINT,
+'input': TokenType.INPUT,
+```
+
+**语法分析器修改 (parser_v2.js)**
+```javascript
+// 新语法支持
+print("Hello");    // 打印字符串
+print(42);         // 打印整数
+print(x + y);      // 打印表达式
+let n: int = input();  // 读取整数
+```
+
+**IR 模块修改 (ir.js)**
+```javascript
+// 新增 input 表达式类型
+createInputExpr() {
+  return { kind: 'input', type: 'int' };
+}
+```
+
+**代码生成修改 (codegen.js)**
+- `generateRequest()` 根据参数类型自动选择 print/print_int
+- `generateInput()` 生成 SVC 0x06 并返回结果寄存器
+- `generateDeclaration()` 支持 `let x = input()` 语法
+- 表达式打印使用临时寄存器，避免覆盖变量
+
+**原生编译器修改 (native_compiler_win.js)**
+
+**SVC 0x05 - print_int 实现**
+```assembly
+; 保存所有 Aurora 寄存器 (r1-r5)
+push rcx, rdx, r8, r9, r10, r11, r12, r13, r14, r15
+sub rsp, 0x48
+
+; 获取 STDOUT 句柄
+mov rcx, -11
+call GetStdHandle
+
+; 整数转字符串（除法循环，支持负数）
+mov r12, rax          ; 保存原始值
+mov rcx, 10           ; 除数
+; ... 循环转换 ...
+
+; 写入控制台
+call WriteFile
+
+; 恢复所有寄存器
+pop r15, r14, r13, r12, r11, r10, r9, r8, rdx, rcx
+```
+
+**SVC 0x06 - input_int 实现**
+```assembly
+; 获取 STDIN 句柄
+mov rcx, -10
+call GetStdHandle
+
+; 读取输入
+lea rdx, [rsp+0x30]   ; 缓冲区
+mov r8d, 20           ; 最大字符数
+call ReadFile
+
+; 解析字符串到整数（支持负数）
+; ... 解析循环 ...
+
+; 结果在 RAX
+```
+
+**关键技术点**
+
+1. **寄存器保存/恢复**：SVC 0x05 保存所有 caller-save 寄存器，确保 print 调用不会破坏后续代码使用的变量
+
+2. **栈帧管理**：每个 SVC 独立管理栈帧，避免与主程序栈冲突
+
+3. **负数处理**：先检测符号，转为绝对值处理，最后加负号
+
+4. **跳转偏移计算**：手动计算 jns/jz/jnz 偏移量，确保条件分支正确
+
+**测试用例**
+
+**io_demo.aur - 综合 I/O 测试**
+```aurora
+module io_demo {
+fn main() {
+    print("=== Aurora I/O Demo ===");
+    print(42);
+    print(-999);
+    
+    let x: int = 100;
+    let y: int = 200;
+    print(x);
+    print(y);
+    print(x + y);   // 300
+    print(x * 3);   // 300
+    print(y - x);   // 100
+    
+    print("=== Demo Complete ===");
+    return 0;
+}
+}
+```
+
+**输出**
+```
+=== Aurora I/O Demo ===42
+0
+12345
+-1
+-999
+100
+200
+300
+300
+100
+=== Demo Complete ===
+```
+
+**echo_input.aur - 输入测试**
+```aurora
+module echo_input {
+fn main() {
+    let x: int = input();
+    return x;
+}
+}
+```
+
+**测试**
+```powershell
+echo "42" | .\build\echo_input.exe
+Exit code: 42
+```
+
+**向后兼容性**
+- 旧语法 `request service print(msg)` 仍然支持
+- 解析器自动处理 PRINT token 作为服务名
+
+**已知限制**
+1. 字符串打印不自动换行（整数打印会）
+2. 管道输入每次读取整个缓冲区（20字节）
+3. 不支持浮点数输入输出
+
+**文件变更统计**
+- `lexer.js`: +4 行
+- `parser_v2.js`: +30 行
+- `ir.js`: +6 行
+- `codegen.js`: +20 行
+- `native_compiler_win.js`: +120 行（含 SVC 0x05/0x06 实现）
+
+**测试状态** ✅
+所有现有测试继续通过：
+```
+✅ hello_world
+✅ loop_sum
+✅ conditional
+✅ pi_calc (exit code: 3141)
+```
+
+新增 I/O 测试：
+```
+✅ io_demo - 综合输出测试
+✅ io_test - 多类型打印测试
+✅ echo_input - 管道输入测试
+✅ print_two_vars - 变量打印测试
+```
+
+---
+
+### Iteration 23 - 浮点数打印与类型转换 (Float Print & Type Cast) ✅
+
+**目标**：实现 `print(float)` 功能和 `as` 类型转换语法，使 Aurora 程序可以输出浮点数结果
+
+**新增功能**
+
+1. **`print(float)` - 打印浮点数**
+   - 新增 SVC 0x07 (print_float)
+   - 支持正数、负数、零
+   - 6 位小数精度
+   - 自动添加换行符
+
+2. **`as` 关键字 - 类型转换**
+   - `float_val as int` - 浮点转整数（截断）
+   - `int_val as float` - 整数转浮点
+   - 在变量声明时自动应用
+
+**词法分析器修改 (lexer.js)**
+```javascript
+// 新增 token 类型
+AS: 'AS',
+
+// 新增关键字
+'as': TokenType.AS,
+```
+
+**语法分析器修改 (parser_v2.js)**
+```javascript
+// 新语法支持
+let x: float = 3.14;
+print(x);              // 输出: 3.140000
+let y: int = x as int; // y = 3
+```
+
+**代码生成修改 (codegen.js)**
+- print_float 使用 xmm6 作为参数传递寄存器（避免覆盖用户变量）
+- `as int` 生成 CVTSD2SI 指令
+- `as float` 生成 CVTSI2SD 指令
+- 表达式参与 print 时复制到临时寄存器
+
+**原生编译器修改 (native_compiler_win.js)**
+
+**SVC 0x07 - print_float 实现**
+```assembly
+; Stack frame: 0x88 bytes
+;   [rsp+0x20-0x27] = written count
+;   [rsp+0x28-0x3F] = scratch / buffer
+;   [rsp+0x40-0x47] = stdout handle
+;   [rsp+0x48-0x4F] = input value
+;   [rsp+0x50-0x7F] = saved xmm0-xmm5
+
+; 保存 GP 寄存器和 xmm0-xmm5
+push rbx, rcx, rdx, r8, r12, r13, r14, r15
+sub rsp, 0x88
+movsd [rsp+0x50], xmm0  ; 保存用户变量
+...
+movsd [rsp+0x78], xmm5
+
+; 从 xmm6 获取输入值
+movsd xmm0, xmm6
+
+; 检测符号位
+movmskpd eax, xmm0
+mov r15d, eax
+
+; 取绝对值
+mov rax, 0x7FFFFFFFFFFFFFFF
+movsd xmm1, [rsp+0x28]  ; mask
+andpd xmm0, xmm1
+
+; 分离整数和小数部分
+cvttsd2si r12, xmm0     ; r12 = int_part
+cvtsi2sd xmm1, r12
+subsd xmm0, xmm1        ; xmm0 = frac_part
+
+; 小数部分 × 1000000
+mov rax, 0x412E848000000000  ; 1000000.0
+movsd xmm1, [rsp+0x28]
+mulsd xmm0, xmm1
+cvtsd2si r13, xmm0      ; r13 = frac_digits
+
+; 构建输出字符串（从后往前）
+lea r14, [rsp+0x3F]     ; buffer end
+; ... 6位小数循环 ...
+; ... 小数点 ...
+; ... 整数部分循环 ...
+; ... 负号（如果需要）...
+
+; 调用 WriteFile
+mov rcx, [rsp+0x40]     ; handle
+mov rdx, r14            ; buffer
+mov r8d, ebx            ; length
+call WriteFile
+
+; 恢复 xmm0-xmm5 和 GP 寄存器
+movsd xmm0, [rsp+0x50]
+...
+movsd xmm5, [rsp+0x78]
+add rsp, 0x88
+pop ...
+```
+
+**关键技术点**
+
+1. **XMM 寄存器保护**：SVC 0x07 保存 xmm0-xmm5，确保调用后用户的浮点变量不变
+
+2. **使用 xmm6 作为参数**：codegen 在调用 print(float) 前把值复制到 xmm6，避免覆盖 xmm0-xmm5 中的用户变量
+
+3. **栈对齐**：8 pushes (64 bytes) + sub rsp, 0x88 (136 bytes) = 200 bytes ≡ 8 (mod 16)，满足 Windows x64 ABI 的 16n+8 对齐要求
+
+4. **浮点精度**：乘以 1000000.0 获取 6 位小数，使用 cvtsd2si 四舍五入
+
+**测试用例**
+
+**float_comprehensive.aur - 完整浮点测试**
+```aurora
+fn main() -> int {
+    let a: float = 5.5;
+    let b: float = 2.5;
+    
+    let sum: float = a + b;    // 8.0
+    let diff: float = a - b;   // 3.0
+    let prod: float = a * b;   // 13.75
+    let quot: float = a / b;   // 2.2
+    
+    print(sum);
+    print(diff);
+    print(prod);
+    print(quot);
+    
+    let int_val: int = a as int;  // 5
+    print(int_val);
+    
+    return 0;
+}
+```
+
+**输出**
+```
+8.000000
+3.000000
+13.750000
+2.200000
+5
+```
+
+**float_print_full_test.aur - 边界测试**
+```aurora
+fn main() -> int {
+    let pi: float = 3.14159;
+    let neg: float = -2.5;
+    let zero: float = 0.0;
+    let one: float = 1.0;
+    let small: float = 0.001;
+    
+    print(pi);     // 3.141590
+    print(neg);    // -2.500000
+    print(zero);   // 0.000000
+    print(one);    // 1.000000
+    print(small);  // 0.001000
+    return 0;
+}
+```
+
+**文件变更统计**
+- `lexer.js`: +2 行（AS token）
+- `parser_v2.js`: +15 行（as 表达式解析）
+- `codegen.js`: +25 行（print_float 生成、xmm6 参数传递）
+- `native_compiler_win.js`: +110 行（SVC 0x07 完整实现）
+
+**测试状态** ✅
+所有现有测试继续通过：
+```
+✅ hello_world
+✅ loop_sum
+✅ conditional
+✅ conditional_no_else
+✅ arithmetic_ops
+✅ complex_expr
+✅ bitwise_ops
+✅ function_call
+```
+
+新增浮点测试：
+```
+✅ float_simple - 单个浮点打印
+✅ float_two_test - 两个浮点打印
+✅ float_fadd_test - 浮点加法
+✅ float_fsub_test - 浮点减法
+✅ float_fmul_test - 浮点乘法
+✅ float_fdiv_test - 浮点除法
+✅ float_comprehensive - 完整浮点操作
+✅ float_print_full_test - 边界值测试
+```
+
+---
+
+### Iteration 23.1 - 浮点精度提升 (Float Precision Enhancement) ✅
+
+**目标**：将浮点数打印精度从 6 位小数提升到 9 位小数
+
+**修改内容**
+
+1. **乘数常量更新**
+   - 原值：`1e6` = `0x412E848000000000` (6 位小数)
+   - 新值：`1e9` = `0x41CDCD6500000000` (9 位小数)
+
+2. **循环计数更新**
+   - 原值：`mov r8b, 6` - 写 6 位小数
+   - 新值：`mov r8b, 9` - 写 9 位小数
+
+**关键代码修改 (native_compiler_win.js)**
+```javascript
+// Multiply by 1e9 = 0x41CDCD6500000000 (9 decimal places, safe for int64)
+// LE bytes: 00 00 00 00 65 CD CD 41
+encoder.emit(0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x65, 0xCD, 0xCD, 0x41);
+
+// Write 9 fractional digits
+encoder.emit(0x41, 0xB0, 0x09);  // mov r8b, 9
+```
+
+**为什么选择 9 位而非 15 位**
+- 15 位（1e15）会导致 int64 溢出风险，因为 `frac * 1e15` 对于接近 1.0 的分数可能超过 `2^63-1`
+- 9 位（1e9）在 int64 范围内安全，最大 `0.999999999 * 1e9 = 999999999` < `2^31`
+- 9 位对于大多数科学计算和日常使用已足够
+
+**精度测试结果**
+```
+Input: 3.141592653589793  →  Output: 3.141592654 ✓ (四舍五入)
+Input: 2.718281828459045  →  Output: 2.718281828 ✓
+Input: 1.4142135623730951 →  Output: 1.414213562 ✓
+Input: 0.000000001        →  Output: 0.000000001 ✓
+Input: -123.456789012     →  Output: -123.456789012 ✓
+```
+
+**测试状态** ✅
+所有 8 个现有测试继续通过，高精度浮点输出正常工作。

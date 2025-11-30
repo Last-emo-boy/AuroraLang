@@ -1,0 +1,14 @@
+// Test: spawn worker that adds 5, counter starts at 10
+// Expected: 15
+
+shared counter: int = 10;
+
+fn worker() {
+  atomic.add(counter, 5);
+}
+
+fn main() -> int {
+  let t1: thread = spawn worker();
+  join t1;
+  return atomic.load(counter);
+}

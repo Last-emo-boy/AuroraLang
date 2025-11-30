@@ -1,0 +1,11 @@
+// Test: spawn empty worker, return 42
+// Expected: 42 (just to verify spawn/join work)
+
+fn worker() {
+}
+
+fn main() -> int {
+  let t1: thread = spawn worker();
+  join t1;
+  return 42;
+}

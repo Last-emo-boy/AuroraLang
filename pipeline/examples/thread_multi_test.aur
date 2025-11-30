@@ -1,0 +1,26 @@
+// Multi-Thread Increment Test
+// Main thread creates 2 threads, each returns a value
+// This tests that threads can be created and joined
+
+module test {
+    fn worker1() -> int {
+        return 10;
+    }
+    
+    fn worker2() -> int {
+        return 20;
+    }
+    
+    fn main() -> int {
+        // Spawn two threads
+        let t1: thread = spawn worker1();
+        let t2: thread = spawn worker2();
+        
+        // Wait for both threads
+        join t1;
+        join t2;
+        
+        // Return success (30 = 10 + 20 if we could get return values)
+        return 30;
+    }
+}

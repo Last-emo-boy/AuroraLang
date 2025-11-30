@@ -1,0 +1,9 @@
+// echo_input.aur - Echo input as exit code
+module echo_input {
+
+fn main() {
+    let x: int = input();
+    return x;
+}
+
+} // module echo_input

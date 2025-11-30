@@ -89,6 +89,9 @@ class Parser {
     
     if (this.check(TokenType.MODULE)) {
       this.parseModuleProgram(program);
+    } else if (this.check(TokenType.FN) || this.check(TokenType.SHARED)) {
+      // Implicit module (bare functions and shared variables)
+      this.parseImplicitModuleProgram(program);
     } else {
       this.parseFlatProgram(program);
     }
@@ -96,23 +99,59 @@ class Parser {
     return program;
   }
   
+  // Parse an implicit module (file with functions but no module {} wrapper)
+  parseImplicitModuleProgram(program) {
+    program.moduleName = 'main';
+    program.sharedVars = [];
+    
+    // Parse function declarations and shared variables until EOF
+    while (!this.check(TokenType.EOF)) {
+      if (this.check(TokenType.FN)) {
+        const fnDecl = this.parseFunctionDecl(program);
+        program.declarations.push(fnDecl);
+      } else if (this.check(TokenType.SHARED)) {
+        const sharedDecl = this.parseSharedDecl(program);
+        program.sharedVars.push(sharedDecl);
+      } else {
+        throw new Error(`Unexpected token at module level: ${this.current().type}`);
+      }
+    }
+  }
+  
   parseModuleProgram(program) {
     this.expect(TokenType.MODULE, 'Expected "module"');
     const moduleName = this.expect(TokenType.IDENTIFIER, 'Expected module name');
     program.moduleName = moduleName.value;
+    program.sharedVars = [];  // Track shared variables
     this.expect(TokenType.LBRACE, 'Expected "{"');
     
-    // Parse function declarations
+    // Parse function declarations and shared variables
     while (!this.check(TokenType.RBRACE) && !this.check(TokenType.EOF)) {
       if (this.check(TokenType.FN)) {
         const fnDecl = this.parseFunctionDecl(program);
         program.declarations.push(fnDecl);
+      } else if (this.check(TokenType.SHARED)) {
+        const sharedDecl = this.parseSharedDecl(program);
+        program.sharedVars.push(sharedDecl);
       } else {
         throw new Error(`Unexpected token in module: ${this.current().type}`);
       }
     }
     
     this.expect(TokenType.RBRACE, 'Expected "}"');
+  }
+  
+  // Parse shared variable declaration: shared counter: int = 0;
+  parseSharedDecl(program) {
+    this.expect(TokenType.SHARED, 'Expected "shared"');
+    const name = this.expect(TokenType.IDENTIFIER, 'Expected variable name');
+    this.expect(TokenType.COLON, 'Expected ":"');
+    const type = this.parseType();
+    this.expect(TokenType.ASSIGN, 'Expected "="');
+    const value = this.parseExpression(program);
+    this.expect(TokenType.SEMICOLON, 'Expected ";"');
+    
+    return IR.createSharedDecl(name.value, type, value);
   }
   
   parseFunctionDecl(program) {
@@ -132,8 +171,13 @@ class Parser {
     }
     
     this.expect(TokenType.RPAREN, 'Expected ")"');
-    this.expect(TokenType.ARROW, 'Expected "->"');
-    const returnType = this.parseType();
+    
+    // Return type is optional (defaults to 'void')
+    let returnType = 'void';
+    if (this.match(TokenType.ARROW)) {
+      returnType = this.parseType();
+    }
+    
     this.expect(TokenType.LBRACE, 'Expected "{"');
     
     // Create function body block and local declarations array
@@ -165,10 +209,24 @@ class Parser {
       this.expect(TokenType.COLON, 'Expected ":"');
       const type = this.parseType();
       this.expect(TokenType.ASSIGN, 'Expected "="');
-      const value = this.parseExpression(fnContext);
+      
+      let value;
+      // Check for spawn expression
+      if (this.check(TokenType.SPAWN)) {
+        value = this.parseSpawnExpression(fnContext);
+      } else {
+        value = this.parseExpression(fnContext);
+      }
       this.expect(TokenType.SEMICOLON, 'Expected ";"');
       
-      fnContext.declarations.push(IR.createLetDecl(name.value, value));
+      // Store the variable type in the context for later reference
+      fnContext.varTypes = fnContext.varTypes || new Map();
+      fnContext.varTypes.set(name.value, type);
+      
+      const letDecl = IR.createLetDecl(name.value, value, type);
+      fnContext.declarations.push(letDecl);
+      // Also push to statements to preserve source order
+      block.statements.push(letDecl);
     } else if (this.check(TokenType.IF)) {
       const stmt = this.parseIfStatementInFunction(fnContext);
       block.statements.push(stmt);
@@ -187,8 +245,17 @@ class Parser {
     } else if (this.check(TokenType.REQUEST)) {
       const stmt = this.parseRequestStatement(fnContext);
       block.statements.push(stmt);
+    } else if (this.check(TokenType.PRINT)) {
+      const stmt = this.parsePrintStatement(fnContext);
+      block.statements.push(stmt);
     } else if (this.check(TokenType.RETURN)) {
       const stmt = this.parseReturnStatement(fnContext);
+      block.statements.push(stmt);
+    } else if (this.check(TokenType.JOIN)) {
+      const stmt = this.parseJoinStatement(fnContext);
+      block.statements.push(stmt);
+    } else if (this.check(TokenType.ATOMIC)) {
+      const stmt = this.parseAtomicStatement(fnContext);
       block.statements.push(stmt);
     } else if (this.check(TokenType.IDENTIFIER)) {
       const stmt = this.parseAssignmentStatement(fnContext);
@@ -315,8 +382,14 @@ class Parser {
     } else if (this.check(TokenType.REQUEST)) {
       const stmt = this.parseRequestStatement(program);
       program.body.statements.push(stmt);
+    } else if (this.check(TokenType.PRINT)) {
+      const stmt = this.parsePrintStatement(program);
+      program.body.statements.push(stmt);
     } else if (this.check(TokenType.RETURN)) {
       const stmt = this.parseReturnStatement(program);
+      program.body.statements.push(stmt);
+    } else if (this.check(TokenType.JOIN)) {
+      const stmt = this.parseJoinStatement(program);
       program.body.statements.push(stmt);
     } else if (this.check(TokenType.IDENTIFIER)) {
       // Assignment statement
@@ -327,20 +400,144 @@ class Parser {
     }
   }
   
+  // Parse print statement: print(arg);
+  // Supports both string literals and integer expressions
+  parsePrintStatement(program) {
+    this.expect(TokenType.PRINT, 'Expected "print"');
+    this.expect(TokenType.LPAREN, 'Expected "("');
+    
+    const args = [];
+    if (!this.check(TokenType.RPAREN)) {
+      do {
+        args.push(this.parseExpression(program));
+      } while (this.match(TokenType.COMMA));
+    }
+    
+    this.expect(TokenType.RPAREN, 'Expected ")"');
+    this.expect(TokenType.SEMICOLON, 'Expected ";"');
+    
+    // Reuse request statement with 'print' service
+    return IR.createRequestStmt('print', args);
+  }
+  
+  parseJoinStatement(program) {
+    this.expect(TokenType.JOIN, 'Expected "join"');
+    const handleName = this.expect(TokenType.IDENTIFIER, 'Expected thread handle variable');
+    this.expect(TokenType.SEMICOLON, 'Expected ";"');
+    
+    return IR.createJoinStmt(handleName.value);
+  }
+  
+  // Parse atomic statement: atomic.add(target, value);
+  parseAtomicStatement(fnContext) {
+    this.expect(TokenType.ATOMIC, 'Expected "atomic"');
+    this.expect(TokenType.DOT, 'Expected "."');
+    
+    const operation = this.expect(TokenType.IDENTIFIER, 'Expected atomic operation (add, fadd, sub, load, store, cas)');
+    this.expect(TokenType.LPAREN, 'Expected "("');
+    
+    const target = this.expect(TokenType.IDENTIFIER, 'Expected target variable');
+    
+    let value = null;
+    let expected = null;
+    let newValue = null;
+    
+    const op = operation.value.toLowerCase();
+    
+    if (op === 'load') {
+      // atomic.load(target) - no additional args
+    } else if (op === 'store' || op === 'add' || op === 'sub' || op === 'fadd') {
+      // atomic.store(target, value), atomic.add(target, value), atomic.sub(target, value), atomic.fadd(target, value)
+      this.expect(TokenType.COMMA, 'Expected ","');
+      value = this.parseExpression(fnContext);
+    } else if (op === 'cas') {
+      // atomic.cas(target, expected, new_value)
+      this.expect(TokenType.COMMA, 'Expected ","');
+      expected = this.parseExpression(fnContext);
+      this.expect(TokenType.COMMA, 'Expected ","');
+      newValue = this.parseExpression(fnContext);
+    } else {
+      throw new Error(`Unknown atomic operation: ${op}. Expected add, fadd, sub, load, store, or cas`);
+    }
+    
+    this.expect(TokenType.RPAREN, 'Expected ")"');
+    this.expect(TokenType.SEMICOLON, 'Expected ";"');
+    
+    return IR.createAtomicExpr(op, target.value, value, expected, newValue);
+  }
+  
+  // Parse shared variable declaration: shared counter: int = 0;
+  parseSharedDecl(program) {
+    this.expect(TokenType.SHARED, 'Expected "shared"');
+    const name = this.expect(TokenType.IDENTIFIER, 'Expected variable name');
+    this.expect(TokenType.COLON, 'Expected ":"');
+    const type = this.parseType();
+    this.expect(TokenType.ASSIGN, 'Expected "="');
+    const initialValue = this.parsePrimary(program);
+    this.expect(TokenType.SEMICOLON, 'Expected ";"');
+    
+    return IR.createSharedDecl(name.value, type, initialValue);
+  }
+  
   parseLetStatement(program) {
     this.expect(TokenType.LET, 'Expected "let"');
     const name = this.expect(TokenType.IDENTIFIER, 'Expected variable name');
     this.expect(TokenType.COLON, 'Expected ":"');
     const type = this.parseType();
     this.expect(TokenType.ASSIGN, 'Expected "="');
-    const value = this.parseExpression(program);
+    
+    let value;
+    // Check for spawn expression: let t: thread = spawn func();
+    if (this.check(TokenType.SPAWN)) {
+      value = this.parseSpawnExpression(program);
+    } else {
+      value = this.parseExpression(program);
+    }
     this.expect(TokenType.SEMICOLON, 'Expected ";"');
     
-    program.declarations.push(IR.createLetDecl(name.value, value));
+    program.declarations.push(IR.createLetDecl(name.value, value, type));
+  }
+  
+  parseSpawnExpression(program) {
+    this.expect(TokenType.SPAWN, 'Expected "spawn"');
+    const funcName = this.expect(TokenType.IDENTIFIER, 'Expected function name');
+    this.expect(TokenType.LPAREN, 'Expected "("');
+    this.expect(TokenType.RPAREN, 'Expected ")"');
+    
+    return IR.createSpawnExpr(funcName.value);
   }
   
   parseAssignmentStatement(program) {
     const name = this.expect(TokenType.IDENTIFIER, 'Expected variable name');
+    
+    // Check for function call statement: func();
+    if (this.check(TokenType.LPAREN)) {
+      this.advance();  // consume '('
+      const args = [];
+      if (!this.check(TokenType.RPAREN)) {
+        do {
+          args.push(this.parseExpression(program));
+        } while (this.match(TokenType.COMMA));
+      }
+      this.expect(TokenType.RPAREN, 'Expected ")"');
+      this.expect(TokenType.SEMICOLON, 'Expected ";"');
+      
+      // Create a call expression as a statement (discarding return value)
+      return IR.createCallStmt(name.value, args);
+    }
+    
+    // Check for array element assignment: arr[index] = value
+    if (this.check(TokenType.LBRACKET)) {
+      this.advance();  // consume '['
+      const indexExpr = this.parseExpression(program);
+      this.expect(TokenType.RBRACKET, 'Expected "]"');
+      this.expect(TokenType.ASSIGN, 'Expected "="');
+      const value = this.parseExpression(program);
+      this.expect(TokenType.SEMICOLON, 'Expected ";"');
+      
+      return IR.createArrayAssignStmt(name.value, indexExpr, value);
+    }
+    
     this.expect(TokenType.ASSIGN, 'Expected "="');
     const value = this.parseExpression(program);
     this.expect(TokenType.SEMICOLON, 'Expected ";"');
@@ -422,7 +619,16 @@ class Parser {
   parseRequestStatement(program) {
     this.expect(TokenType.REQUEST, 'Expected "request"');
     this.expect(TokenType.SERVICE, 'Expected "service"');
-    const service = this.expect(TokenType.IDENTIFIER, 'Expected service name');
+    
+    // Service name can be IDENTIFIER or PRINT (since print is now a keyword)
+    let service;
+    if (this.check(TokenType.PRINT)) {
+      service = this.advance();
+      service.value = 'print';  // Normalize token value
+    } else {
+      service = this.expect(TokenType.IDENTIFIER, 'Expected service name');
+    }
+    
     this.expect(TokenType.LPAREN, 'Expected "("');
     
     const args = [];
@@ -586,14 +792,46 @@ class Parser {
       return IR.createUnaryExpr('~', operand, 'int');
     }
     
-    return this.parsePrimary(program);
+    return this.parsePostfix(program);
+  }
+  
+  // Parse postfix expressions including type cast (as)
+  parsePostfix(program) {
+    let expr = this.parsePrimary(program);
+    
+    // Handle 'as' type cast: expr as int, expr as float
+    while (this.check(TokenType.AS)) {
+      this.advance(); // consume 'as'
+      
+      // Parse target type
+      let targetType;
+      if (this.check(TokenType.INT)) {
+        this.advance();
+        targetType = 'int';
+      } else if (this.check(TokenType.FLOAT)) {
+        this.advance();
+        targetType = 'float';
+      } else {
+        throw new Error(`Expected type after 'as' at ${this.current().line}:${this.current().column}`);
+      }
+      
+      expr = IR.createCastExpr(targetType, expr);
+    }
+    
+    return expr;
   }
   
   parsePrimary(program) {
-    // Number literal
+    // Integer literal
     if (this.check(TokenType.NUMBER)) {
       const token = this.advance();
       return IR.createLiteralExpr('int', token.value);
+    }
+    
+    // Float literal
+    if (this.check(TokenType.FLOAT_NUMBER)) {
+      const token = this.advance();
+      return IR.createLiteralExpr('float', token.value);
     }
     
     // Boolean literal true
@@ -614,13 +852,82 @@ class Parser {
       return IR.createLiteralExpr('string', token.value);
     }
     
-    // Identifier (variable reference or function call)
+    // Input expression: input()
+    if (this.check(TokenType.INPUT)) {
+      this.advance();  // consume 'input'
+      this.expect(TokenType.LPAREN, 'Expected "(" after input');
+      this.expect(TokenType.RPAREN, 'Expected ")"');
+      return IR.createInputExpr('int');  // Returns int
+    }
+    
+    // Math functions: sqrt(x), pow(x, n)
+    if (this.check(TokenType.SQRT)) {
+      this.advance();  // consume 'sqrt'
+      this.expect(TokenType.LPAREN, 'Expected "("');
+      const arg = this.parseExpression(program);
+      this.expect(TokenType.RPAREN, 'Expected ")"');
+      return IR.createMathCall('sqrt', [arg]);
+    }
+    
+    if (this.check(TokenType.POW)) {
+      this.advance();  // consume 'pow'
+      this.expect(TokenType.LPAREN, 'Expected "("');
+      const base = this.parseExpression(program);
+      this.expect(TokenType.COMMA, 'Expected ","');
+      const exp = this.parseExpression(program);
+      this.expect(TokenType.RPAREN, 'Expected ")"');
+      return IR.createMathCall('pow', [base, exp]);
+    }
+    
+    // Spawn expression: spawn func()
+    if (this.check(TokenType.SPAWN)) {
+      return this.parseSpawnExpression(program);
+    }
+    
+    // Atomic load expression: atomic.load(varname)
+    if (this.check(TokenType.ATOMIC)) {
+      this.advance();  // consume 'atomic'
+      this.expect(TokenType.DOT, 'Expected "."');
+      const op = this.expect(TokenType.IDENTIFIER, 'Expected atomic operation');
+      if (op.value !== 'load') {
+        throw new Error(`atomic.${op.value} cannot be used as an expression. Only atomic.load is allowed.`);
+      }
+      this.expect(TokenType.LPAREN, 'Expected "("');
+      const varName = this.expect(TokenType.IDENTIFIER, 'Expected variable name');
+      this.expect(TokenType.RPAREN, 'Expected ")"');
+      return IR.createAtomicLoadExpr(varName.value, 'int');
+    }
+    
+    // Array literal: [1, 2, 3]
+    if (this.check(TokenType.LBRACKET)) {
+      return this.parseArrayLiteral(program);
+    }
+    
+    // Identifier (variable reference, function call, or array access)
     if (this.check(TokenType.IDENTIFIER)) {
       const name = this.advance();
       
       // Check for function call
       if (this.check(TokenType.LPAREN)) {
         return this.parseCallExpr(name.value, program);
+      }
+      
+      // Check for array access: arr[index]
+      if (this.check(TokenType.LBRACKET)) {
+        this.advance();  // consume '['
+        const indexExpr = this.parseExpression(program);
+        this.expect(TokenType.RBRACKET, 'Expected "]"');
+        
+        // Determine element type from declaration
+        const decl = program.declarations.find(d => d.name === name.value);
+        let elementType = 'int';
+        if (decl && decl.value.type.startsWith('array<')) {
+          const match = decl.value.type.match(/array<(.+)>/);
+          if (match) elementType = match[1];
+        }
+        
+        const arrayExpr = IR.createVariableExpr(name.value, decl ? decl.value.type : 'array<int>');
+        return IR.createArrayAccessExpr(arrayExpr, indexExpr, elementType);
       }
       
       // Variable reference - determine type from declarations
@@ -637,6 +944,28 @@ class Parser {
     }
     
     throw new Error(`Unexpected token in expression: ${this.current().type} at ${this.current().line}:${this.current().column}`);
+  }
+  
+  // Parse array literal: [expr, expr, ...]
+  parseArrayLiteral(program) {
+    this.expect(TokenType.LBRACKET, 'Expected "["');
+    
+    const elements = [];
+    let elementType = 'int';  // Default type
+    
+    if (!this.check(TokenType.RBRACKET)) {
+      do {
+        const elem = this.parseExpression(program);
+        elements.push(elem);
+        if (elements.length === 1 && elem.type) {
+          elementType = elem.type;
+        }
+      } while (this.match(TokenType.COMMA));
+    }
+    
+    this.expect(TokenType.RBRACKET, 'Expected "]"');
+    
+    return IR.createArrayLiteralExpr(elements, elementType);
   }
   
   // Legacy method for backward compatibility
@@ -673,8 +1002,20 @@ class Parser {
   
   parseType() {
     if (this.match(TokenType.INT)) return 'int';
+    if (this.match(TokenType.FLOAT)) return 'float';
     if (this.match(TokenType.STRING)) return 'string';
     if (this.match(TokenType.BOOL)) return 'bool';
+    if (this.match(TokenType.THREAD)) return 'thread';
+    
+    // Array type: array<elementType>
+    if (this.check(TokenType.IDENTIFIER) && this.current().value === 'array') {
+      this.advance();  // consume 'array'
+      this.expect(TokenType.LT, 'Expected "<" after array');
+      const elementType = this.parseType();
+      this.expect(TokenType.GT, 'Expected ">" after element type');
+      return `array<${elementType}>`;
+    }
+    
     throw new Error(`Expected type at ${this.current().line}:${this.current().column}`);
   }
 }

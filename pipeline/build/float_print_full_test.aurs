@@ -1,0 +1,22 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/float_print_full_test.aur
+
+bytes 0x2000FF0000000000  ; fmov xmm0, 3.14159 ; pi
+bytes 0x400921F9F01B866E  ;   ; float64 3.14159
+bytes 0x2001FF0000000000  ; fmov xmm1, -2.5 ; neg
+bytes 0xC004000000000000  ;   ; float64 -2.5
+bytes 0x2002FF0000000000  ; fmov xmm2, 0 ; zero
+bytes 0x0000000000000000  ;   ; float64 0
+bytes 0x2003FF0000000000  ; fmov xmm3, 1 ; one
+bytes 0x3FF0000000000000  ;   ; float64 1
+bytes 0x2004FF0000000000  ; fmov xmm4, 0.001 ; small
+bytes 0x3F50624DD2F1A9FC  ;   ; float64 0.001
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2000010000000000  ; fmov xmm0, xmm1
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2000020000000000  ; fmov xmm0, xmm2
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2000030000000000  ; fmov xmm0, xmm3
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2000040000000000  ; fmov xmm0, xmm4
+bytes 0x0B07000000000000  ; svc 0x07
