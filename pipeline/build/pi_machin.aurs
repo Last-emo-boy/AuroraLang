@@ -1,0 +1,105 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/pi_machin.aur
+
+# Stack frame size: 280 bytes
+stack_size 280
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x2000FF0000000000  ; fmov xmm0, 0.2 ; x
+bytes 0x3FC999999999999A  ;   ; float64 0.2
+bytes 0x2001000000000000  ; fmov xmm1, xmm0 ; term = x
+bytes 0x2002000000000000  ; fmov xmm2, xmm0 ; sum1 = x
+bytes 0x2003FF0000000000  ; fmov xmm3, 3 ; n
+bytes 0x4008000000000000  ;   ; float64 3
+bytes 0x2004FF0000000000  ; fmov xmm4, -1 ; sign
+bytes 0xBFF0000000000000  ;   ; float64 -1
+bytes 0x07FE000000000000  ; jmp while_cond_0 ; check condition first
+bytes 0x2307010000000000  ; fmul xmm7, xmm1, xmm0
+bytes 0x2306070000000000  ; fmul xmm6, xmm7, xmm0
+bytes 0x2001060000000000  ; fmov xmm1, xmm6 ; term
+bytes 0x2307040100000000  ; fmul xmm7, xmm4, xmm1
+bytes 0x2406070300000000  ; fdiv xmm6, xmm7, xmm3
+bytes 0x2005060000000000  ; fmov xmm5, xmm6 ; contrib
+bytes 0x2106020500000000  ; fadd xmm6, xmm2, xmm5
+bytes 0x2002060000000000  ; fmov xmm2, xmm6 ; sum1
+bytes 0x2007FF0000000000  ; fmov xmm7, -1 ; 
+bytes 0xBFF0000000000000  ;   ; float64 -1
+bytes 0x2306040700000000  ; fmul xmm6, xmm4, xmm7
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sign
+bytes 0x2007FF0000000000  ; fmov xmm7, 2 ; 
+bytes 0x4000000000000000  ;   ; float64 2
+bytes 0x2106030700000000  ; fadd xmm6, xmm3, xmm7
+bytes 0x2003060000000000  ; fmov xmm3, xmm6 ; n
+bytes 0x2006FF0000000000  ; fmov xmm6, 55 ; 
+bytes 0x404B800000000000  ;   ; float64 55
+bytes 0x2503060000000000  ; fcmp xmm3, xmm6
+bytes 0x0803FE0000000000  ; cjmp <, while_body_1 ; continue loop if true
+bytes 0x2006020000000000  ; fmov xmm6, xmm2 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2007FF0000000000  ; fmov xmm7, 4 ; 
+bytes 0x4010000000000000  ;   ; float64 4
+bytes 0x2306020700000000  ; fmul xmm6, xmm2, xmm7
+bytes 0x27000000000000C8  ; fstore [RSP+200], xmm0 ; spill x
+bytes 0x2000060000000000  ; fmov xmm0, xmm6 ; at1
+bytes 0x2006000000000000  ; fmov xmm6, xmm0 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x27010000000000D0  ; fstore [RSP+208], xmm1 ; spill term
+bytes 0x26010000000000C8  ; fload xmm1, [RSP+200] ; reload x
+bytes 0x2001FF0000000000  ; fmov xmm1, 0.00418410041841 ; x
+bytes 0x3F712358E75D3003  ;   ; float64 0.00418410041841
+bytes 0x27050000000000D8  ; fstore [RSP+216], xmm5 ; spill contrib
+bytes 0x26050000000000D0  ; fload xmm5, [RSP+208] ; reload term
+bytes 0x2005010000000000  ; fmov xmm5, xmm1 ; term = x
+bytes 0x2003FF0000000000  ; fmov xmm3, 3 ; n
+bytes 0x4008000000000000  ;   ; float64 3
+bytes 0x2004FF0000000000  ; fmov xmm4, -1 ; sign
+bytes 0xBFF0000000000000  ;   ; float64 -1
+bytes 0x27020000000000E0  ; fstore [RSP+224], xmm2 ; spill sum1
+bytes 0x2002010000000000  ; fmov xmm2, xmm1 ; sum2 = x
+bytes 0x07FE000000000000  ; jmp while_cond_3 ; check condition first
+bytes 0x2307050100000000  ; fmul xmm7, xmm5, xmm1
+bytes 0x2306070100000000  ; fmul xmm6, xmm7, xmm1
+bytes 0x2005060000000000  ; fmov xmm5, xmm6 ; term
+bytes 0x2307040500000000  ; fmul xmm7, xmm4, xmm5
+bytes 0x2406070300000000  ; fdiv xmm6, xmm7, xmm3
+bytes 0x27000000000000E8  ; fstore [RSP+232], xmm0 ; spill at1
+bytes 0x2000060000000000  ; fmov xmm0, xmm6 ; contrib2
+bytes 0x2106020000000000  ; fadd xmm6, xmm2, xmm0
+bytes 0x2002060000000000  ; fmov xmm2, xmm6 ; sum2
+bytes 0x2007FF0000000000  ; fmov xmm7, -1 ; 
+bytes 0xBFF0000000000000  ;   ; float64 -1
+bytes 0x2306040700000000  ; fmul xmm6, xmm4, xmm7
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sign
+bytes 0x2007FF0000000000  ; fmov xmm7, 2 ; 
+bytes 0x4000000000000000  ;   ; float64 2
+bytes 0x2106030700000000  ; fadd xmm6, xmm3, xmm7
+bytes 0x2003060000000000  ; fmov xmm3, xmm6 ; n
+bytes 0x2006FF0000000000  ; fmov xmm6, 15 ; 
+bytes 0x402E000000000000  ;   ; float64 15
+bytes 0x2503060000000000  ; fcmp xmm3, xmm6
+bytes 0x0803FE0000000000  ; cjmp <, while_body_4 ; continue loop if true
+bytes 0x2006020000000000  ; fmov xmm6, xmm2 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x27010000000000F0  ; fstore [RSP+240], xmm1 ; spill x
+bytes 0x26010000000000E8  ; fload xmm1, [RSP+232] ; reload at1
+bytes 0x2206010200000000  ; fsub xmm6, xmm1, xmm2
+bytes 0x27050000000000F8  ; fstore [RSP+248], xmm5 ; spill term
+bytes 0x2005060000000000  ; fmov xmm5, xmm6 ; pi_4
+bytes 0x2006050000000000  ; fmov xmm6, xmm5 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2007FF0000000000  ; fmov xmm7, 4 ; 
+bytes 0x4010000000000000  ;   ; float64 4
+bytes 0x2306050700000000  ; fmul xmm6, xmm5, xmm7
+bytes 0x2700000000000100  ; fstore [RSP+256], xmm0 ; spill contrib2
+bytes 0x2000060000000000  ; fmov xmm0, xmm6 ; pi
+bytes 0x2006000000000000  ; fmov xmm6, xmm0 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1
+label while_body_1 10
+label while_cond_0 26
+label while_exit_2 30
+label while_body_4 53
+label while_cond_3 70
+label while_exit_5 74

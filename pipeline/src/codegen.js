@@ -55,7 +55,11 @@ const ISA = {
     FSTORE: 0x27, // Store float to stack: [RSP+offset], src_xmm
     CVTSI2SD: 0x28, // Convert int to float: dest_xmm, src_reg
     CVTSD2SI: 0x29, // Convert float to int: dest_reg, src_xmm
-    FSQRT: 0x2A,  // Float square root: dest_xmm, src_xmm
+    FSQRT: 0x2A,    // Float square root: dest_xmm, src_xmm
+    FABS: 0x2B,     // Float absolute value: dest_xmm, src_xmm
+    FNEG: 0x2C,     // Float negate: dest_xmm, src_xmm
+    FFLOOR: 0x2D,   // Float floor (round toward -inf): dest_xmm, src_xmm
+    FCEIL: 0x2E,    // Float ceil (round toward +inf): dest_xmm, src_xmm
     // Thread operations
     SPAWN: 0x30,  // Spawn thread: dest_reg (handle), func_label
     JOIN: 0x31,   // Join thread: handle_reg
@@ -366,6 +370,22 @@ function encodeFSqrt(destXmm, srcXmm) {
   return packInstruction(ISA.OPCODE.FSQRT, destXmm, srcXmm, ISA.OPERAND.UNUSED, 0);
 }
 
+function encodeFAbs(destXmm, srcXmm) {
+  return packInstruction(ISA.OPCODE.FABS, destXmm, srcXmm, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeFNeg(destXmm, srcXmm) {
+  return packInstruction(ISA.OPCODE.FNEG, destXmm, srcXmm, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeFFloor(destXmm, srcXmm) {
+  return packInstruction(ISA.OPCODE.FFLOOR, destXmm, srcXmm, ISA.OPERAND.UNUSED, 0);
+}
+
+function encodeFCeil(destXmm, srcXmm) {
+  return packInstruction(ISA.OPCODE.FCEIL, destXmm, srcXmm, ISA.OPERAND.UNUSED, 0);
+}
+
 // Thread operations
 function encodeSpawn(destReg, funcLabel) {
   // SPAWN dest_reg, label (label is encoded separately in comment)
@@ -402,17 +422,18 @@ class CodeGenContext {
     // Float support - XMM register allocation with spilling
     this.floatVars = new Map();          // Map float var name to XMM reg (if in register)
     this.floatVarsOnStack = new Map();   // Map float var name to stack offset (if spilled)
+    this.floatStackValid = new Set();    // Float vars with valid stack copy (no need to re-spill)
     this.floatRegToVar = new Map();      // Map XMM register to var name
     this.floatAccessOrder = [];          // LRU tracking (oldest first)
     this.floatInitialized = new Set();   // Float vars that have been assigned
     this.nextFloatStackOffset = 0;       // Next stack offset for float spill (after int spills)
-    this.floatTemps = [false, false, false, false]; // xmm8-xmm11 for temp use (or use stack)
+    this.floatTemps = [false, false, false, false, false, false, false, false, false, false]; // xmm6-xmm15 for temp use
     this.floatConstants = new Map();     // Map float value to data label
     this.nextFloatConstId = 0;           // For naming float constants
     
-    // XMM register pool: xmm0-xmm5 for variables, xmm6-xmm7 for temps (more temps below)
+    // XMM register pool: xmm0-xmm5 for variables, xmm6-xmm15 for temps
     this.FLOAT_VAR_REGS = [0, 1, 2, 3, 4, 5];  // 6 registers for float variables
-    this.FLOAT_TEMP_REGS = [6, 7];              // 2 permanent temp registers
+    this.FLOAT_TEMP_REGS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15];  // 10 temp registers
     
     // Shared variable support
     this.sharedVars = new Map();     // Map shared var name to { id, type, initialValue }
@@ -488,9 +509,11 @@ class CodeGenContext {
     throw new Error(`Float variable not allocated: ${varName}`);
   }
   
-  // Mark float variable as initialized
+  // Mark float variable as initialized (and invalidate any stack copy)
   markFloatInitialized(varName) {
     this.floatInitialized.add(varName);
+    // Invalidate stack copy - the value in register is now the authoritative one
+    this.floatStackValid.delete(varName);
   }
   
   // Get a register for assigning to a float variable (doesn't reload)
@@ -498,6 +521,7 @@ class CodeGenContext {
     for (const xmm of this.FLOAT_VAR_REGS) {
       if (!this.floatRegToVar.has(xmm)) {
         this.floatVarsOnStack.delete(varName);
+        this.floatStackValid.delete(varName);  // No longer on stack
         this._assignFloatVarToReg(varName, xmm);
         return xmm;
       }
@@ -507,19 +531,31 @@ class CodeGenContext {
   
   // Evict LRU float variable and allocate to new variable
   _evictAndAllocateFloat(varName) {
-    // Find LRU initialized variable to spill
+    // Find LRU initialized variable to spill (prefer ones already with valid stack copy)
     let victimVar = null;
     let victimXmm = null;
     
+    // First: try to find a variable that's already safely on stack
     for (const v of this.floatAccessOrder) {
-      if (this.floatVars.has(v) && this.floatInitialized.has(v)) {
+      if (this.floatVars.has(v) && this.floatStackValid.has(v)) {
         victimVar = v;
         victimXmm = this.floatVars.get(v);
         break;
       }
     }
     
-    // If no initialized var, try any variable
+    // Second: find LRU initialized variable that needs to be spilled
+    if (!victimVar) {
+      for (const v of this.floatAccessOrder) {
+        if (this.floatVars.has(v) && this.floatInitialized.has(v)) {
+          victimVar = v;
+          victimXmm = this.floatVars.get(v);
+          break;
+        }
+      }
+    }
+    
+    // Third: try any variable
     if (!victimVar) {
       for (const v of this.floatAccessOrder) {
         if (this.floatVars.has(v)) {
@@ -534,8 +570,8 @@ class CodeGenContext {
       throw new Error(`Cannot allocate XMM for '${varName}': no evictable variables`);
     }
     
-    // Spill victim if initialized
-    if (this.floatInitialized.has(victimVar)) {
+    // Spill victim if initialized AND not already valid on stack
+    if (this.floatInitialized.has(victimVar) && !this.floatStackValid.has(victimVar)) {
       if (!this.floatVarsOnStack.has(victimVar)) {
         // Assign new stack slot (after int vars, starting at offset 200)
         const stackOffset = 200 + this.nextFloatStackOffset * 8;
@@ -549,6 +585,9 @@ class CodeGenContext {
         encodeFStore(stackOffset, victimXmm),
         `fstore [RSP+${stackOffset}], xmm${victimXmm} ; spill ${victimVar}`
       );
+      
+      // Mark stack copy as valid
+      this.floatStackValid.add(victimVar);
     }
     
     // Remove victim from register
@@ -558,6 +597,7 @@ class CodeGenContext {
     // Assign to new variable
     this._assignFloatVarToReg(varName, victimXmm);
     this.floatVarsOnStack.delete(varName);
+    this.floatStackValid.delete(varName);  // New var is not on stack
     
     return victimXmm;
   }
@@ -577,15 +617,25 @@ class CodeGenContext {
     if (targetXmm === null) {
       let victimVar = null;
       
-      // Prefer uninitialized
+      // First: prefer variables already with valid stack copy
       for (const v of this.floatAccessOrder) {
-        if (this.floatVars.has(v) && !this.floatInitialized.has(v)) {
+        if (this.floatVars.has(v) && this.floatStackValid.has(v) && v !== varName) {
           victimVar = v;
           break;
         }
       }
       
-      // Or LRU initialized (not the one we're reloading)
+      // Second: prefer uninitialized
+      if (!victimVar) {
+        for (const v of this.floatAccessOrder) {
+          if (this.floatVars.has(v) && !this.floatInitialized.has(v)) {
+            victimVar = v;
+            break;
+          }
+        }
+      }
+      
+      // Third: LRU initialized (not the one we're reloading)
       if (!victimVar) {
         for (const v of this.floatAccessOrder) {
           if (this.floatVars.has(v) && v !== varName) {
@@ -601,8 +651,8 @@ class CodeGenContext {
       
       targetXmm = this.floatVars.get(victimVar);
       
-      // Spill victim if initialized
-      if (this.floatInitialized.has(victimVar)) {
+      // Spill victim if initialized AND not already valid on stack
+      if (this.floatInitialized.has(victimVar) && !this.floatStackValid.has(victimVar)) {
         if (!this.floatVarsOnStack.has(victimVar)) {
           const stackOffset = 200 + this.nextFloatStackOffset * 8;
           this.floatVarsOnStack.set(victimVar, stackOffset);
@@ -614,6 +664,9 @@ class CodeGenContext {
           encodeFStore(stackOffset, targetXmm),
           `fstore [RSP+${stackOffset}], xmm${targetXmm} ; spill ${victimVar}`
         );
+        
+        // Mark stack copy as valid
+        this.floatStackValid.add(victimVar);
       }
       
       this.floatVars.delete(victimVar);
@@ -627,11 +680,38 @@ class CodeGenContext {
       `fload xmm${targetXmm}, [RSP+${stackOffset}] ; reload ${varName}`
     );
     
-    // Update tracking
-    this.floatVarsOnStack.delete(varName);
+    // Update tracking - variable is now in register
+    // Keep stack slot but note it's still valid (for future reloads if needed)
     this._assignFloatVarToReg(varName, targetXmm);
+    // Note: floatStackValid stays true - the value on stack is still valid until variable is modified
     
     return targetXmm;
+  }
+  
+  // Pre-spill all initialized float variables to stack
+  // Called before entering loops to avoid spill instructions in loop body
+  spillAllFloatVars() {
+    for (const [varName, xmm] of this.floatVars.entries()) {
+      // Only spill if initialized and not already valid on stack
+      if (this.floatInitialized.has(varName) && !this.floatStackValid.has(varName)) {
+        // Allocate stack slot if needed
+        if (!this.floatVarsOnStack.has(varName)) {
+          const stackOffset = 200 + this.nextFloatStackOffset * 8;
+          this.floatVarsOnStack.set(varName, stackOffset);
+          this.nextFloatStackOffset++;
+        }
+        const stackOffset = this.floatVarsOnStack.get(varName);
+        
+        // Emit spill instruction
+        this.emitInstruction(
+          encodeFStore(stackOffset, xmm),
+          `fstore [RSP+${stackOffset}], xmm${xmm} ; pre-spill ${varName} before loop`
+        );
+        
+        // Mark as valid on stack
+        this.floatStackValid.add(varName);
+      }
+    }
   }
   
   // Helper: assign float var to XMM register
@@ -656,20 +736,20 @@ class CodeGenContext {
   }
   
   allocFloatTemp() {
-    if (!this.floatTemps[0]) {
-      this.floatTemps[0] = true;
-      return 6;  // xmm6
-    }
-    if (!this.floatTemps[1]) {
-      this.floatTemps[1] = true;
-      return 7;  // xmm7
+    // Try xmm6-xmm15 for temporary use
+    for (let i = 0; i < this.floatTemps.length; i++) {
+      if (!this.floatTemps[i]) {
+        this.floatTemps[i] = true;
+        return 6 + i;  // xmm6, xmm7, xmm8, ... xmm15
+      }
     }
     throw new Error('Out of float temp registers');
   }
   
   releaseFloatTemp(xmm) {
-    if (xmm === 6) this.floatTemps[0] = false;
-    if (xmm === 7) this.floatTemps[1] = false;
+    if (xmm >= 6 && xmm <= 15) {
+      this.floatTemps[xmm - 6] = false;
+    }
   }
   
   // Get or create a float constant in data section
@@ -830,8 +910,15 @@ class CodeGenContext {
     this.nextArraySlot = 0;
     // Reset float registers
     this.floatVars = new Map();
+    this.floatRegToVar = new Map();
+    this.floatAccessOrder = [];
+    this.floatVarsOnStack = new Map();
+    this.floatStackValid = new Set();  // Reset stack validity tracking
+    this.floatInitialized = new Set();
+    this.nextFloatStackOffset = 0;
     this.nextFloatReg = 0;
-    this.floatTemps = [false, false];
+    // 10 temp registers: xmm6-xmm15
+    this.floatTemps = [false, false, false, false, false, false, false, false, false, false];
   }
 }
 
@@ -1249,10 +1336,32 @@ function generateCastDeclaration(decl, ctx) {
 }
 
 // Generate float binary expression into XMM register
+// Optimized to minimize temp register usage by computing complex operands first
 function generateFloatBinaryInto(expr, destXmm, ctx) {
-  const leftXmm = generateFloatExpr(expr.left, ctx);
-  const rightXmm = generateFloatExpr(expr.right, ctx);
+  // Determine which operand is more complex (needs more temps)
+  const leftComplexity = getExprComplexity(expr.left);
+  const rightComplexity = getExprComplexity(expr.right);
   
+  let leftXmm, rightXmm;
+  
+  if (rightComplexity > leftComplexity) {
+    // Compute right operand first (more complex), into destXmm to avoid extra temp
+    if (expr.right.kind === 'binary') {
+      generateFloatBinaryInto(expr.right, destXmm, ctx);
+      rightXmm = destXmm;
+    } else {
+      rightXmm = generateFloatExpr(expr.right, ctx);
+    }
+    // Then compute left operand
+    leftXmm = generateFloatExpr(expr.left, ctx);
+  } else {
+    // Compute left operand first
+    leftXmm = generateFloatExpr(expr.left, ctx);
+    // Then compute right operand
+    rightXmm = generateFloatExpr(expr.right, ctx);
+  }
+  
+  // Emit the operation
   switch (expr.operator) {
     case '+':
       ctx.emitInstruction(
@@ -1282,18 +1391,29 @@ function generateFloatBinaryInto(expr, destXmm, ctx) {
       throw new Error(`Unsupported float operator: ${expr.operator}`);
   }
   
-  // Release temps if they were allocated
-  if (leftXmm >= 6) ctx.releaseFloatTemp(leftXmm);
-  if (rightXmm >= 6) ctx.releaseFloatTemp(rightXmm);
+  // Release temps if they were allocated (and different from destXmm)
+  if (leftXmm >= 6 && leftXmm !== destXmm) ctx.releaseFloatTemp(leftXmm);
+  if (rightXmm >= 6 && rightXmm !== destXmm) ctx.releaseFloatTemp(rightXmm);
 }
 
-// Generate math function call (sqrt, pow, etc.)
+// Helper to estimate expression complexity (for register allocation optimization)
+function getExprComplexity(expr) {
+  if (!expr) return 0;
+  if (expr.kind === 'literal' || expr.kind === 'variable') return 1;
+  if (expr.kind === 'binary') {
+    return 1 + Math.max(getExprComplexity(expr.left), getExprComplexity(expr.right));
+  }
+  if (expr.kind === 'math_call') return 2;
+  return 1;
+}
+
+// Generate math function call (sqrt, pow, abs, floor, ceil, etc.)
 function generateMathCall(expr, ctx) {
   const resultXmm = ctx.allocFloatTemp();
   
   switch (expr.func) {
     case 'sqrt': {
-      // sqrt(x) - single argument
+      // sqrt(x) - single argument, use hardware SQRTSD
       const argXmm = generateFloatExpr(expr.args[0], ctx);
       ctx.emitInstruction(
         encodeFSqrt(resultXmm, argXmm),
@@ -1302,6 +1422,71 @@ function generateMathCall(expr, ctx) {
       if (argXmm >= 6) ctx.releaseFloatTemp(argXmm);
       break;
     }
+    
+    case 'abs': {
+      // abs(x) - clear sign bit using ANDPD with mask
+      const argXmm = generateFloatExpr(expr.args[0], ctx);
+      ctx.emitInstruction(
+        encodeFAbs(resultXmm, argXmm),
+        `fabs xmm${resultXmm}, xmm${argXmm}`
+      );
+      if (argXmm >= 6) ctx.releaseFloatTemp(argXmm);
+      break;
+    }
+    
+    case 'floor': {
+      // floor(x) - round toward negative infinity
+      const argXmm = generateFloatExpr(expr.args[0], ctx);
+      ctx.emitInstruction(
+        encodeFFloor(resultXmm, argXmm),
+        `ffloor xmm${resultXmm}, xmm${argXmm}`
+      );
+      if (argXmm >= 6) ctx.releaseFloatTemp(argXmm);
+      break;
+    }
+    
+    case 'ceil': {
+      // ceil(x) - round toward positive infinity
+      const argXmm = generateFloatExpr(expr.args[0], ctx);
+      ctx.emitInstruction(
+        encodeFCeil(resultXmm, argXmm),
+        `fceil xmm${resultXmm}, xmm${argXmm}`
+      );
+      if (argXmm >= 6) ctx.releaseFloatTemp(argXmm);
+      break;
+    }
+    
+    case 'sin':
+    case 'cos':
+    case 'tan':
+    case 'atan':
+    case 'log':
+    case 'exp': {
+      // These require software implementation or C library
+      // For now, emit a runtime call placeholder
+      throw new Error(`${expr.func}() is not yet implemented in hardware. Use Taylor series in Aurora code.`);
+    }
+    
+    case 'factorial': {
+      // factorial(n) - compute n! as float
+      // Generate a loop: result = 1.0; for i = 2 to n: result *= i
+      const argExpr = expr.args[0];
+      
+      if (argExpr.kind === 'literal' && argExpr.type === 'int' && argExpr.value >= 0 && argExpr.value <= 20) {
+        // Small literal - compute at compile time
+        let result = 1.0;
+        for (let i = 2; i <= argExpr.value; i++) {
+          result *= i;
+        }
+        ctx.emitFloatLoadImm(resultXmm, result, ` ; factorial(${argExpr.value}) = ${result}`);
+      } else {
+        // Runtime factorial - generate loop
+        // This is complex, for now throw
+        throw new Error('factorial() currently only supports small literal arguments (0-20)');
+      }
+      break;
+    }
+    
     case 'pow': {
       // pow(base, exp) - for integer exponent, use repeated multiplication
       const baseXmm = generateFloatExpr(expr.args[0], ctx);
@@ -1340,6 +1525,7 @@ function generateMathCall(expr, ctx) {
       if (baseXmm >= 6) ctx.releaseFloatTemp(baseXmm);
       break;
     }
+    
     default:
       throw new Error(`Unknown math function: ${expr.func}`);
   }
@@ -1496,12 +1682,19 @@ function generateFloatAssignment(stmt, ctx) {
     }
     ctx.releaseFloatTemp(tempXmm);
   }
+  
+  // Mark variable as modified (invalidates stack copy)
+  ctx.markFloatInitialized(stmt.target);
 }
 
 function generateWhile(stmt, ctx) {
   const condLabel = ctx.generateLabel('while_cond');
   const bodyLabel = ctx.generateLabel('while_body');
   const exitLabel = ctx.generateLabel('while_exit');
+  
+  // Pre-spill all initialized float variables before entering loop
+  // This ensures spill instructions are NOT in the loop body
+  ctx.spillAllFloatVars();
   
   // Push loop context for break/continue
   ctx.pushLoop(exitLabel, condLabel);
@@ -1881,6 +2074,19 @@ function encodeAtomicOp(opcode, sharedId, srcReg) {
 
 // Generate call statement (call without using return value)
 function generateCallStmt(stmt, ctx) {
+  // Check if this is a builtin function that should be a request/SVC
+  const builtinServices = ['print', 'print_int', 'print_float', 'exit', 'pause', 'pause_silent', 'input_int'];
+  if (builtinServices.includes(stmt.functionName)) {
+    // Convert to request statement format and delegate
+    const requestStmt = {
+      kind: 'request',
+      service: stmt.functionName,
+      args: stmt.args,
+    };
+    generateRequest(requestStmt, ctx);
+    return;
+  }
+  
   const fnLabel = ctx.getFunctionLabel(stmt.functionName);
   
   // Generate arguments into registers r1-r6

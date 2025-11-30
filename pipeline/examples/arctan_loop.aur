@@ -1,0 +1,19 @@
+// Test arctan(0.2) with loop
+fn main() {
+    let x: float = 0.2;
+    let term: float = x;
+    let sum: float = x;
+    let n: float = 3.0;
+    let sign: float = -1.0;
+    
+    // 10 iterations
+    while n < 25.0 {
+        term = term * x * x;
+        let contrib: float = sign * term / n;
+        sum = sum + contrib;
+        sign = sign * -1.0;
+        n = n + 2.0;
+    }
+    
+    print_float(sum);  // Should be arctan(0.2) ≈ 0.19739555984988...
+}

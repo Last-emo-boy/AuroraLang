@@ -285,3 +285,25 @@
   1. Consider adding base relocation support for ASLR-compatible executables (optional, lower priority).
   2. Extend PE generation to support additional kernel32/user32 imports for future features.
   3. Add Windows-specific test cases to the automated test runner.
+
+## 2025-01-14 — Iteration 30: Pi Calculation via Machin's Formula
+- **Fixed critical float register spill bug in loops**:
+  - Problem: Spill instructions generated inside loop body would execute on every iteration, corrupting stack values when registers were reused for new variables.
+  - Root cause: When variable X was evicted to stack inside a loop, the spill instruction remained in the loop. On subsequent iterations, the register (now holding a different value) would overwrite X's stack slot.
+  - Solution 1: Added `floatStackValid` tracking to mark variables with valid stack copies—skip re-spilling if already valid.
+  - Solution 2: Added `spillAllFloatVars()` called at loop entry to pre-spill all initialized variables **before** the loop body.
+  - Solution 3: Added `markFloatInitialized()` call in `generateFloatAssignment()` to invalidate stack copies when variables are modified.
+- **Fixed `resetForFunction()` bug**: Was only allocating 2 temp registers instead of 10 (`floatTemps = [false, false]`).
+- **Verified Pi calculation using Machin's formula**: 
+  - `pi/4 = 4*arctan(1/5) - arctan(1/239)`
+  - Each arctan computed via Taylor series in separate loops
+  - Output: **3.141592654** (correct to 9 decimal places!)
+- All 8 test cases still passing.
+- Files modified:
+  - `pipeline/src/codegen.js`: Added `floatStackValid`, `spillAllFloatVars()`, fixed `resetForFunction()`, added `markFloatInitialized()` in assignments
+  - `pipeline/examples/pi_machin.aur`: Pi calculation using Machin's formula
+- Next steps:
+  1. Implement more math functions (sqrt, pow) for advanced calculations.
+  2. Consider implementing factorial for Chudnovsky algorithm preparation.
+  3. Explore big number support for arbitrary precision Pi calculation.
+

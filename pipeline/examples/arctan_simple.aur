@@ -1,0 +1,17 @@
+// Simple arctan(0.2) test with one iteration
+fn main() {
+    let x: float = 0.2;
+    let result: float = x;  // First term: x
+    
+    // Second term: -x³/3
+    let x3: float = x * x * x;
+    let term2: float = x3 / 3.0;
+    result = result - term2;
+    
+    // Third term: +x⁵/5
+    let x5: float = x3 * x * x;
+    let term3: float = x5 / 5.0;
+    result = result + term3;
+    
+    print_float(result);  // Should be close to arctan(0.2) ≈ 0.1973955...
+}

@@ -1,0 +1,52 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: examples/math_funcs_test.aur
+
+# Stack frame size: 264 bytes
+stack_size 264
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x2000FF0000000000  ; fmov xmm0, -5.5 ; x
+bytes 0xC016000000000000  ;   ; float64 -5.5
+bytes 0x2B06000000000000  ; fabs xmm6, xmm0
+bytes 0x2001060000000000  ; fmov xmm1, xmm6 ; a = abs(...)
+bytes 0x2006010000000000  ; fmov xmm6, xmm1 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2002FF0000000000  ; fmov xmm2, 3.14 ; y
+bytes 0x40091EB851EB851F  ;   ; float64 3.14
+bytes 0x2B06020000000000  ; fabs xmm6, xmm2
+bytes 0x2003060000000000  ; fmov xmm3, xmm6 ; b = abs(...)
+bytes 0x2006030000000000  ; fmov xmm6, xmm3 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2004FF0000000000  ; fmov xmm4, 3.7 ; p
+bytes 0x400D99999999999A  ;   ; float64 3.7
+bytes 0x2D06040000000000  ; ffloor xmm6, xmm4
+bytes 0x2005060000000000  ; fmov xmm5, xmm6 ; q = floor(...)
+bytes 0x2006050000000000  ; fmov xmm6, xmm5 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x27000000000000C8  ; fstore [RSP+200], xmm0 ; spill x
+bytes 0x2000FF0000000000  ; fmov xmm0, -3.7 ; r
+bytes 0xC00D99999999999A  ;   ; float64 -3.7
+bytes 0x2D06000000000000  ; ffloor xmm6, xmm0
+bytes 0x27010000000000D0  ; fstore [RSP+208], xmm1 ; spill a
+bytes 0x2001060000000000  ; fmov xmm1, xmm6 ; s = floor(...)
+bytes 0x2006010000000000  ; fmov xmm6, xmm1 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x27020000000000D8  ; fstore [RSP+216], xmm2 ; spill y
+bytes 0x2002FF0000000000  ; fmov xmm2, 3.2 ; m
+bytes 0x400999999999999A  ;   ; float64 3.2
+bytes 0x2E06020000000000  ; fceil xmm6, xmm2
+bytes 0x27030000000000E0  ; fstore [RSP+224], xmm3 ; spill b
+bytes 0x2003060000000000  ; fmov xmm3, xmm6 ; n = ceil(...)
+bytes 0x2006030000000000  ; fmov xmm6, xmm3 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x27040000000000E8  ; fstore [RSP+232], xmm4 ; spill p
+bytes 0x2004FF0000000000  ; fmov xmm4, -3.2 ; u
+bytes 0xC00999999999999A  ;   ; float64 -3.2
+bytes 0x2E06040000000000  ; fceil xmm6, xmm4
+bytes 0x27050000000000F0  ; fstore [RSP+240], xmm5 ; spill q
+bytes 0x2005060000000000  ; fmov xmm5, xmm6 ; v = ceil(...)
+bytes 0x2006050000000000  ; fmov xmm6, xmm5 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1

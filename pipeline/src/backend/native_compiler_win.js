@@ -77,6 +77,10 @@ const OPCODE = {
   CVTSI2SD: 0x28,
   CVTSD2SI: 0x29,
   FSQRT: 0x2A,
+  FABS: 0x2B,
+  FNEG: 0x2C,
+  FFLOOR: 0x2D,
+  FCEIL: 0x2E,
   // Thread operations
   SPAWN: 0x30,
   JOIN: 0x31,
@@ -731,6 +735,26 @@ function compileInstructionWin64(encoder, instr, stringLabels, stringLengths) {
       // FSQRT dest_xmm, src_xmm
       // sqrtsd xmm_dest, xmm_src
       encoder.sqrtsdXmmXmm(op0, op1);
+      break;
+    
+    case OPCODE.FABS:
+      // FABS dest_xmm, src_xmm - absolute value
+      encoder.fabsXmmXmm(op0, op1);
+      break;
+    
+    case OPCODE.FNEG:
+      // FNEG dest_xmm, src_xmm - negate
+      encoder.fnegXmmXmm(op0, op1);
+      break;
+    
+    case OPCODE.FFLOOR:
+      // FFLOOR dest_xmm, src_xmm - floor (toward -inf)
+      encoder.ffloorXmmXmm(op0, op1);
+      break;
+    
+    case OPCODE.FCEIL:
+      // FCEIL dest_xmm, src_xmm - ceil (toward +inf)
+      encoder.fceilXmmXmm(op0, op1);
       break;
     
     case OPCODE.SPAWN:

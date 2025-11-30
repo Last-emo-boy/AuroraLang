@@ -860,7 +860,7 @@ class Parser {
       return IR.createInputExpr('int');  // Returns int
     }
     
-    // Math functions: sqrt(x), pow(x, n)
+    // Math functions: sqrt(x), pow(x, n), sin(x), cos(x), etc.
     if (this.check(TokenType.SQRT)) {
       this.advance();  // consume 'sqrt'
       this.expect(TokenType.LPAREN, 'Expected "("');
@@ -877,6 +877,38 @@ class Parser {
       const exp = this.parseExpression(program);
       this.expect(TokenType.RPAREN, 'Expected ")"');
       return IR.createMathCall('pow', [base, exp]);
+    }
+    
+    // Single-argument math functions
+    const singleArgMathFuncs = [
+      { token: TokenType.ABS, name: 'abs' },
+      { token: TokenType.FLOOR, name: 'floor' },
+      { token: TokenType.CEIL, name: 'ceil' },
+      { token: TokenType.SIN, name: 'sin' },
+      { token: TokenType.COS, name: 'cos' },
+      { token: TokenType.TAN, name: 'tan' },
+      { token: TokenType.ATAN, name: 'atan' },
+      { token: TokenType.LOG, name: 'log' },
+      { token: TokenType.EXP, name: 'exp' },
+    ];
+    
+    for (const { token, name } of singleArgMathFuncs) {
+      if (this.check(token)) {
+        this.advance();
+        this.expect(TokenType.LPAREN, 'Expected "("');
+        const arg = this.parseExpression(program);
+        this.expect(TokenType.RPAREN, 'Expected ")"');
+        return IR.createMathCall(name, [arg]);
+      }
+    }
+    
+    // factorial(n) - returns float for large numbers
+    if (this.check(TokenType.FACTORIAL)) {
+      this.advance();
+      this.expect(TokenType.LPAREN, 'Expected "("');
+      const arg = this.parseExpression(program);
+      this.expect(TokenType.RPAREN, 'Expected ")"');
+      return IR.createMathCall('factorial', [arg]);
     }
     
     // Spawn expression: spawn func()

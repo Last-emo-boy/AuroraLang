@@ -47,6 +47,16 @@ const TokenType = {
   // Math functions
   SQRT: 'SQRT',           // sqrt(float)
   POW: 'POW',             // pow(float, float)
+  ABS: 'ABS',             // abs(float)
+  FLOOR: 'FLOOR',         // floor(float)
+  CEIL: 'CEIL',           // ceil(float)
+  SIN: 'SIN',             // sin(float)
+  COS: 'COS',             // cos(float)
+  TAN: 'TAN',             // tan(float)
+  ATAN: 'ATAN',           // atan(float)
+  LOG: 'LOG',             // log(float) - natural log
+  EXP: 'EXP',             // exp(float) - e^x
+  FACTORIAL: 'FACTORIAL', // factorial(int)
   
   // Literals
   NUMBER: 'NUMBER',
@@ -128,6 +138,16 @@ const KEYWORDS = {
   'as': TokenType.AS,
   'sqrt': TokenType.SQRT,
   'pow': TokenType.POW,
+  'abs': TokenType.ABS,
+  'floor': TokenType.FLOOR,
+  'ceil': TokenType.CEIL,
+  'sin': TokenType.SIN,
+  'cos': TokenType.COS,
+  'tan': TokenType.TAN,
+  'atan': TokenType.ATAN,
+  'log': TokenType.LOG,
+  'exp': TokenType.EXP,
+  'factorial': TokenType.FACTORIAL,
   'shared': TokenType.SHARED,
   'atomic': TokenType.ATOMIC,
   'true': TokenType.TRUE,

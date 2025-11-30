@@ -777,6 +777,113 @@ class X86EncoderWin64 {
     this.emit(this.modrm(3, destXmm & 7, srcXmm & 7));
   }
   
+  // FABS - absolute value using ANDPD with mask to clear sign bit
+  // Load mask from memory, then ANDPD
+  fabsXmmXmm(destXmm, srcXmm) {
+    // First move src to dest if different
+    if (destXmm !== srcXmm) {
+      this.movsdRegReg(destXmm, srcXmm);
+    }
+    // ANDPD with constant mask 0x7FFFFFFFFFFFFFFF (clear sign bit)
+    // 66 0F 54 /r  ANDPD xmm1, xmm2/m128
+    // We need the mask in memory. Use RIP-relative addressing to a data section constant.
+    // For now, use a register-based approach: load mask, then ANDPD
+    // Alternative: emit inline constant and use RIP-relative
+    
+    // Simple approach: Use ANDPD with RIP-relative memory reference
+    // We'll need to add the abs_mask constant to data section
+    const maskLabel = '__fabs_mask';
+    if (!this.dataLabels.has(maskLabel)) {
+      // Add mask constant: 0x7FFFFFFFFFFFFFFF (for low 64-bit), 0x7FFFFFFFFFFFFFFF (for high)
+      while (this.dataSection.length % 16 !== 0) {
+        this.dataSection.push(0);
+      }
+      this.dataLabels.set(maskLabel, this.dataSection.length);
+      // 128-bit mask (16 bytes) - clear sign bits for both doubles
+      const maskBytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F,  // low qword
+                         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F]; // high qword
+      for (const b of maskBytes) {
+        this.dataSection.push(b);
+      }
+    }
+    
+    // 66 0F 54 /r  ANDPD xmm, m128
+    this.emit(0x66);
+    if (destXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, 0));
+    }
+    this.emit(0x0F, 0x54);
+    // ModR/M: mod=00, reg=dest, rm=101 (RIP-relative)
+    this.emit(this.modrm(0, destXmm & 7, 5));
+    // Add relocation for mask address
+    this.relocations.push({
+      offset: this.code.length,
+      type: 'rip_relative_data',
+      label: maskLabel
+    });
+    this.emitImm32(0); // placeholder for disp32
+  }
+  
+  // FNEG - negate using XORPD with sign bit mask
+  fnegXmmXmm(destXmm, srcXmm) {
+    // First move src to dest if different
+    if (destXmm !== srcXmm) {
+      this.movsdRegReg(destXmm, srcXmm);
+    }
+    
+    // XORPD with constant mask 0x8000000000000000 (flip sign bit)
+    const maskLabel = '__fneg_mask';
+    if (!this.dataLabels.has(maskLabel)) {
+      while (this.dataSection.length % 16 !== 0) {
+        this.dataSection.push(0);
+      }
+      this.dataLabels.set(maskLabel, this.dataSection.length);
+      // 128-bit mask - flip sign bits
+      const maskBytes = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,  // low qword
+                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80]; // high qword
+      for (const b of maskBytes) {
+        this.dataSection.push(b);
+      }
+    }
+    
+    // 66 0F 57 /r  XORPD xmm, m128
+    this.emit(0x66);
+    if (destXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, 0));
+    }
+    this.emit(0x0F, 0x57);
+    this.emit(this.modrm(0, destXmm & 7, 5));
+    this.relocations.push({
+      offset: this.code.length,
+      type: 'rip_relative_data',
+      label: maskLabel
+    });
+    this.emitImm32(0);
+  }
+  
+  // ROUNDSD - round double with mode (SSE4.1)
+  // mode: 0x09 = floor (toward -inf), 0x0A = ceil (toward +inf), 0x0B = trunc, 0x0C = nearest
+  roundsdXmmXmm(destXmm, srcXmm, mode) {
+    // 66 0F 3A 0B /r ib  ROUNDSD xmm1, xmm2/m64, imm8
+    this.emit(0x66);
+    if (destXmm >= 8 || srcXmm >= 8) {
+      this.emit(this.rex(0, destXmm >= 8, 0, srcXmm >= 8));
+    }
+    this.emit(0x0F, 0x3A, 0x0B);
+    this.emit(this.modrm(3, destXmm & 7, srcXmm & 7));
+    this.emit(mode);
+  }
+  
+  // Floor (round toward -infinity)
+  ffloorXmmXmm(destXmm, srcXmm) {
+    this.roundsdXmmXmm(destXmm, srcXmm, 0x09);
+  }
+  
+  // Ceil (round toward +infinity)
+  fceilXmmXmm(destXmm, srcXmm) {
+    this.roundsdXmmXmm(destXmm, srcXmm, 0x0A);
+  }
+
   // Add float constant to data section (8-byte aligned)
   addFloatConst(label, value) {
     // Align to 8 bytes
@@ -974,15 +1081,15 @@ class X86EncoderWin64 {
       }
       
       if (debug) {
-        console.log(`[resolve] label=${reloc.label}, target=0x${target.toString(16)}, offset=${reloc.offset}`);
+        console.log(`[resolve] label=${reloc.label}, target=0x${target.toString(16)}, offset=${reloc.offset}, type=${reloc.type}`);
       }
       
-      if (reloc.type === 'rel32') {
-        // Calculate relative offset
-        const from = codeBase + reloc.offset + 4;  // After the rel32 field
+      if (reloc.type === 'rel32' || reloc.type === 'rip_relative_data') {
+        // Calculate relative offset from RIP (which is after the disp32 field)
+        const from = codeBase + reloc.offset + 4;  // After the rel32/disp32 field
         const rel = target - from;
         
-        // Write rel32
+        // Write rel32/disp32
         this.code[reloc.offset] = rel & 0xFF;
         this.code[reloc.offset + 1] = (rel >> 8) & 0xFF;
         this.code[reloc.offset + 2] = (rel >> 16) & 0xFF;

@@ -1,0 +1,108 @@
+# Aurora minimal ISA manifest (Stage N1 pipeline output)
+# Generated from: pipeline/examples/pi_machin.aur
+
+# Stack frame size: 296 bytes
+stack_size 296
+
+bytes 0x07FE000000000000  ; jmp fn_main ; entry point
+bytes 0x2000FF0000000000  ; fmov xmm0, 0.2 ; x1
+bytes 0x3FC999999999999A  ;   ; float64 0.2
+bytes 0x2001000000000000  ; fmov xmm1, xmm0 ; term1 = x1
+bytes 0x2002000000000000  ; fmov xmm2, xmm0 ; sum1 = x1
+bytes 0x2003FF0000000000  ; fmov xmm3, 3 ; n1
+bytes 0x4008000000000000  ;   ; float64 3
+bytes 0x2004FF0000000000  ; fmov xmm4, -1 ; sign1
+bytes 0xBFF0000000000000  ;   ; float64 -1
+bytes 0x27000000000000C8  ; fstore [RSP+200], xmm0 ; pre-spill x1 before loop
+bytes 0x27010000000000D0  ; fstore [RSP+208], xmm1 ; pre-spill term1 before loop
+bytes 0x27020000000000D8  ; fstore [RSP+216], xmm2 ; pre-spill sum1 before loop
+bytes 0x27030000000000E0  ; fstore [RSP+224], xmm3 ; pre-spill n1 before loop
+bytes 0x27040000000000E8  ; fstore [RSP+232], xmm4 ; pre-spill sign1 before loop
+bytes 0x07FE000000000000  ; jmp while_cond_0 ; check condition first
+bytes 0x2307010000000000  ; fmul xmm7, xmm1, xmm0
+bytes 0x2306070000000000  ; fmul xmm6, xmm7, xmm0
+bytes 0x2001060000000000  ; fmov xmm1, xmm6 ; term1
+bytes 0x2307040100000000  ; fmul xmm7, xmm4, xmm1
+bytes 0x2406070300000000  ; fdiv xmm6, xmm7, xmm3
+bytes 0x2005060000000000  ; fmov xmm5, xmm6 ; contrib1
+bytes 0x2106020500000000  ; fadd xmm6, xmm2, xmm5
+bytes 0x2002060000000000  ; fmov xmm2, xmm6 ; sum1
+bytes 0x2007FF0000000000  ; fmov xmm7, -1 ; 
+bytes 0xBFF0000000000000  ;   ; float64 -1
+bytes 0x2306040700000000  ; fmul xmm6, xmm4, xmm7
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sign1
+bytes 0x2007FF0000000000  ; fmov xmm7, 2 ; 
+bytes 0x4000000000000000  ;   ; float64 2
+bytes 0x2106030700000000  ; fadd xmm6, xmm3, xmm7
+bytes 0x2003060000000000  ; fmov xmm3, xmm6 ; n1
+bytes 0x2006FF0000000000  ; fmov xmm6, 55 ; 
+bytes 0x404B800000000000  ;   ; float64 55
+bytes 0x2503060000000000  ; fcmp xmm3, xmm6
+bytes 0x0803FE0000000000  ; cjmp <, while_body_1 ; continue loop if true
+bytes 0x2006020000000000  ; fmov xmm6, xmm2 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2000FF0000000000  ; fmov xmm0, 0.00418410042 ; x2
+bytes 0x3F712358E77928BC  ;   ; float64 0.00418410042
+bytes 0x2001000000000000  ; fmov xmm1, xmm0 ; term2 = x2
+bytes 0x2004000000000000  ; fmov xmm4, xmm0 ; sum2 = x2
+bytes 0x2003FF0000000000  ; fmov xmm3, 3 ; n2
+bytes 0x4008000000000000  ;   ; float64 3
+bytes 0x2002FF0000000000  ; fmov xmm2, -1 ; sign2
+bytes 0xBFF0000000000000  ;   ; float64 -1
+bytes 0x27050000000000F0  ; fstore [RSP+240], xmm5 ; pre-spill contrib1 before loop
+bytes 0x27000000000000F8  ; fstore [RSP+248], xmm0 ; pre-spill x2 before loop
+bytes 0x2701000000000100  ; fstore [RSP+256], xmm1 ; pre-spill term2 before loop
+bytes 0x2704000000000108  ; fstore [RSP+264], xmm4 ; pre-spill sum2 before loop
+bytes 0x2703000000000110  ; fstore [RSP+272], xmm3 ; pre-spill n2 before loop
+bytes 0x2702000000000118  ; fstore [RSP+280], xmm2 ; pre-spill sign2 before loop
+bytes 0x07FE000000000000  ; jmp while_cond_3 ; check condition first
+bytes 0x2307010000000000  ; fmul xmm7, xmm1, xmm0
+bytes 0x2306070000000000  ; fmul xmm6, xmm7, xmm0
+bytes 0x2001060000000000  ; fmov xmm1, xmm6 ; term2
+bytes 0x2307020100000000  ; fmul xmm7, xmm2, xmm1
+bytes 0x2406070300000000  ; fdiv xmm6, xmm7, xmm3
+bytes 0x2005060000000000  ; fmov xmm5, xmm6 ; contrib2
+bytes 0x2106040500000000  ; fadd xmm6, xmm4, xmm5
+bytes 0x2004060000000000  ; fmov xmm4, xmm6 ; sum2
+bytes 0x2007FF0000000000  ; fmov xmm7, -1 ; 
+bytes 0xBFF0000000000000  ;   ; float64 -1
+bytes 0x2306020700000000  ; fmul xmm6, xmm2, xmm7
+bytes 0x2002060000000000  ; fmov xmm2, xmm6 ; sign2
+bytes 0x2007FF0000000000  ; fmov xmm7, 2 ; 
+bytes 0x4000000000000000  ;   ; float64 2
+bytes 0x2106030700000000  ; fadd xmm6, xmm3, xmm7
+bytes 0x2003060000000000  ; fmov xmm3, xmm6 ; n2
+bytes 0x2006FF0000000000  ; fmov xmm6, 15 ; 
+bytes 0x402E000000000000  ;   ; float64 15
+bytes 0x2503060000000000  ; fcmp xmm3, xmm6
+bytes 0x0803FE0000000000  ; cjmp <, while_body_4 ; continue loop if true
+bytes 0x2006040000000000  ; fmov xmm6, xmm4 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x26000000000000D8  ; fload xmm0, [RSP+216] ; reload sum1
+bytes 0x2006000000000000  ; fmov xmm6, xmm0 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2007FF0000000000  ; fmov xmm7, 4 ; 
+bytes 0x4010000000000000  ;   ; float64 4
+bytes 0x2306000700000000  ; fmul xmm6, xmm0, xmm7
+bytes 0x2001060000000000  ; fmov xmm1, xmm6 ; at1_times_4
+bytes 0x2006010000000000  ; fmov xmm6, xmm1 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2206010400000000  ; fsub xmm6, xmm1, xmm4
+bytes 0x2002060000000000  ; fmov xmm2, xmm6 ; pi_quarter
+bytes 0x2006020000000000  ; fmov xmm6, xmm2 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x2007FF0000000000  ; fmov xmm7, 4 ; 
+bytes 0x4010000000000000  ;   ; float64 4
+bytes 0x2306020700000000  ; fmul xmm6, xmm2, xmm7
+bytes 0x2003060000000000  ; fmov xmm3, xmm6 ; pi
+bytes 0x2006030000000000  ; fmov xmm6, xmm3 ; copy for print
+bytes 0x0B07000000000000  ; svc 0x07
+bytes 0x0C00000000000000  ; halt ; implicit exit
+
+label fn_main 1
+label while_body_1 15
+label while_cond_0 31
+label while_exit_2 35
+label while_body_4 52
+label while_cond_3 68
+label while_exit_5 72

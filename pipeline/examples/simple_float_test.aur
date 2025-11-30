@@ -1,0 +1,5 @@
+// Simple print_float test
+fn main() {
+    let x: float = 3.14159;
+    print_float(x);
+}
